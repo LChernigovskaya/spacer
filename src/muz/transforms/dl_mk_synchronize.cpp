@@ -247,12 +247,18 @@ namespace datalog {
     //
     // -----------------------------------
 
-    lemma::lemma(ast_manager & m, ptr_vector<expr> const & constraint, ptr_vector<expr> const & holes)
+    lemma::lemma(ast_manager & m, ptr_vector<expr> const & constraint, vector< ptr_vector<expr> > const & holes)
           : m(m),
             m_constraint(constraint),
             m_holes(holes),
-            m_hole_enabled(m_holes.size(), true)
-    {}
+            m_hole_enabled(m_holes.size())
+    {
+        for (unsigned i = 0; i < m_holes.size(); ++i) {
+            for (unsigned j = 0; j < m_holes[i].size(); ++j) {
+                m_hole_enabled[i].push_back(true);
+            }
+        }
+    }
 
     lemma::lemma(ast_manager & m, ptr_vector<lemma> const & combined_lemmas)
           : m(m) {
@@ -262,14 +268,18 @@ namespace datalog {
             return;
         }
         m_holes = combined_lemmas[0]->m_holes;
-        m_hole_enabled = svector<bool>(m_holes.size(), true);
-        ptr_vector<lemma>::const_iterator it = combined_lemmas.begin(), end = combined_lemmas.end();
-        lemma * first_lemma = *it;
-        ++it;
+        m_hole_enabled.resize(m_holes.size());
+        for (int i = 0; i < m_holes.size(); ++i) {
+            m_hole_enabled[i] = svector<bool>(m_holes[i].size(), true);
+        }
+
+        ptr_vector<lemma>::const_iterator begin = combined_lemmas.begin(), end = combined_lemmas.end();
+        lemma * first_lemma = *begin;
+        ++begin;
         for (unsigned i = 0; i < first_lemma->m_constraint.size(); ++i) {
             expr * candidate_constraint = first_lemma->m_constraint[i];
             bool in_every_lemma = true;
-            for (; it != end; ++it) {
+            for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
                 if (!(*it)->m_constraint.contains(candidate_constraint)) {
                     in_every_lemma = false;
                     break;
@@ -280,14 +290,16 @@ namespace datalog {
             }
         }
         for (unsigned i = 0; i < first_lemma->m_hole_enabled.size(); ++i) {
-            bool in_every_lemma = true;
-            for (; it != end; ++it) {
-                if (!(*it)->m_hole_enabled[i]) {
-                    in_every_lemma = false;
-                    break;
+            for (unsigned j = 0; j < first_lemma->m_hole_enabled[i].size(); ++j) {
+                bool in_every_lemma = true;
+                for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
+                    if (!(*it)->m_hole_enabled[i][j]) {
+                        in_every_lemma = false;
+                        break;
+                    }
                 }
+                m_hole_enabled[i][j] = in_every_lemma;
             }
-            m_hole_enabled[i] = in_every_lemma;
         }
     }
 
@@ -300,38 +312,105 @@ namespace datalog {
                 m_constraint.push_back(source.m_constraint[i]);
             }
         }
-        for (unsigned i = 0, j = source.m_constraint.size(); i < source.m_holes.size(); ++i) {
-            if (m_hole_enabled[i] && !new_assumption_vars.contains(old_assumption_vars[j++])) {
-                m_hole_enabled[i] = false;
+        for (unsigned i = 0; i < source.m_holes.size(); ++i) {
+            for (unsigned j = 0, ind = source.m_constraint.size(); j < source.m_holes[i].size(); ++j) {
+                if (m_hole_enabled[i][j] && !new_assumption_vars.contains(old_assumption_vars[ind++])) {
+                    m_hole_enabled[i][j] = false;
+                }
             }
         }
     }
 
-    void lemma::fill_holes(bool replace_with_consts, unsigned num_exprs, expr * const* exprs, unsigned & delta, ptr_vector<expr> & result,
-            ptr_vector<sort> & var_sorts, svector<symbol> & var_names) {
-        SASSERT(num_exprs == m_holes.size());
-        ptr_vector<expr> new_holes;
+    void lemma::fill_holes(bool replace_with_consts, vector< ptr_vector<expr> > exprs, unsigned & delta,
+            ptr_vector<expr> & result, ptr_vector<sort> & var_sorts, svector<symbol> & var_names) {
+        vector< ptr_vector<expr> > new_holes;
         replace_bound_vars_in_this(replace_with_consts, delta, result, new_holes, var_sorts, var_names);
         for (unsigned i = 0; i < new_holes.size(); ++i) {
-            if (m_hole_enabled[i]) {
-                result.push_back(m.mk_eq(exprs[i], new_holes[i]));
+            for (unsigned j  = 0; j < new_holes[i].size(); ++j) {
+                if (m_hole_enabled[i][j]) {
+                    result.push_back(m.mk_eq(exprs[i][j], new_holes[i][j]));
+                }
             }
         }
     }
 
-    void lemma::replace_bound_vars_in_this(bool with_consts, unsigned & delta, ptr_vector<expr> & new_constraint, ptr_vector<expr> & new_holes,
-            ptr_vector<sort> & var_sorts, svector<symbol> & var_names) {
+    void lemma::replace_bound_vars_in_this(bool with_consts, unsigned & delta, ptr_vector<expr> & new_constraint,
+            vector< ptr_vector<expr> > & new_holes, ptr_vector<sort> & var_sorts, svector<symbol> & var_names) {
         vector<ptr_vector<expr> > input;
         input.push_back(m_constraint);
-        input.push_back(m_holes);
+        for (unsigned i = 0; i < m_holes.size(); ++i) {
+            input.push_back(m_holes[i]);
+        }
         vector< ptr_vector<expr> > output = replace_bound_vars(m, with_consts, delta, input, var_sorts, var_names);
-        SASSERT(output.size() == 2);
+        SASSERT(output.size() == (1 + m_holes.size()));
         new_constraint = output[0];
-        new_holes = output[1];
+        for (unsigned i = 1; i < m_holes.size() + 1; ++i) {
+            new_holes.push_back(output[i]);
+        }
     }
 
-    expr_ref_vector lemma::operator()(obj_hashtable<rule> const & rs, ptr_vector<expr> & assumption_vars, ptr_vector<expr> & conclusions,
-            ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names) {
+    void lemma::helper(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
+        expr_ref_vector & result, vector<ptr_vector<expr> > & head_implicants, vector<ptr_vector<expr> > & call_implicants,
+        unsigned & delta, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names,
+        reachability_stratifier::comp_vector const & strata) {
+        if (idx >= merged_rules.size()) {
+            vector< ptr_vector<expr> > head;
+            vector< ptr_vector<expr> > call;
+            call.resize(buf.size());
+            for (unsigned ind = 0; ind < buf.size(); ++ind) {
+                rule & r = *buf[ind];
+                vector< ptr_vector<expr> > to_rename;
+                ptr_vector<expr> interpreted_tail;
+                for (unsigned i = r.get_uninterpreted_tail_size(); i < r.get_tail_size(); ++i) {
+                    interpreted_tail.push_back(r.get_tail(i));
+                }
+                to_rename.push_back(interpreted_tail);
+                to_rename.push_back(ptr_vector<expr>(r.get_head()->get_num_args(), r.get_head()->get_args()));
+                for (unsigned i = 0; i < r.get_uninterpreted_tail_size(); ++i) {
+                    app * app = r.get_tail(i);
+                    if (app->get_decl() == r.get_head()->get_decl()) {
+                        to_rename.push_back(ptr_vector<expr>(app->get_num_args(), app->get_args()));
+                    }
+                }
+
+                // TODO: make everything expr_ref_list!
+                vector< ptr_vector<expr> > renamed_exprs = replace_bound_vars(m, true, delta, to_rename, free_var_sorts, free_var_names);
+                for (unsigned i = 0; i < renamed_exprs[0].size(); ++i) {
+                    result.push_back(renamed_exprs[0][i]);
+                }
+                head.push_back(renamed_exprs[1]);
+
+                if (renamed_exprs.size() > 2) {
+                    call[ind] = renamed_exprs[2];
+                }
+                else {
+                    call[ind] = renamed_exprs[1];
+                }
+            }
+            ptr_vector<expr> tmp;
+            fill_holes(true, head, delta, tmp, free_var_sorts, free_var_names);
+            head_implicants.push_back(tmp);
+            free_var_sorts.reset();
+            free_var_names.reset();
+            delta = 0;
+            tmp.reset();
+            fill_holes(false, call, delta, tmp, free_var_sorts, free_var_names);
+            call_implicants.push_back(tmp);
+            return;
+        }
+
+        obj_hashtable<rule> const & pred_rules = *strata[merged_rules[idx]];
+        for (obj_hashtable<rule>::iterator it = pred_rules.begin(); it != pred_rules.end(); ++it) {
+            buf[idx] = *it;
+            helper(idx + 1, buf, merged_rules, result, head_implicants, call_implicants, delta,
+                free_var_sorts, free_var_names, strata);
+        }
+    }
+
+    expr_ref_vector lemma::operator()(vector<unsigned> const & merged_stratum, ptr_vector<expr> & assumption_vars,
+            ptr_vector<expr> & conclusions, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names,
+            reachability_stratifier::comp_vector const & strata) {
+        // display(std::cout);
         unsigned n = m_constraint.size();
         unsigned delta = 0;
         expr_ref_vector result(m);
@@ -343,48 +422,17 @@ namespace datalog {
             expr * premise_var = m.mk_fresh_const("__pr", m.mk_bool_sort());
             assumption_vars[i] = premise_var;
         }
-        for (unsigned i = 0, j = n; i < m_holes.size(); ++i) {
-            if (m_hole_enabled[i]) {
-                expr * premise_var = m.mk_fresh_const("__pr", m.mk_bool_sort());
-                assumption_vars.push_back(premise_var);
-            }
-        }
-
-        for (obj_hashtable<rule>::iterator it = rs.begin(); it != rs.end(); ++it) {
-            rule & r = **it;
-
-            vector< ptr_vector<expr> > to_rename;
-            ptr_vector<expr> interpreted_tail;
-            for (unsigned i = r.get_uninterpreted_tail_size(); i < r.get_tail_size(); ++i) {
-                interpreted_tail.push_back(r.get_tail(i));
-            }
-            to_rename.push_back(interpreted_tail);
-            to_rename.push_back(ptr_vector<expr>(r.get_head()->get_num_args(), r.get_head()->get_args()));
-            for (unsigned i = 0; i < r.get_uninterpreted_tail_size(); ++i) {
-                app * app = r.get_tail(i);
-                if (app->get_decl() == r.get_head()->get_decl()) {
-                    to_rename.push_back(ptr_vector<expr>(app->get_num_args(), app->get_args()));
+        for (unsigned i = 0; i < m_holes.size(); ++i) {
+            for (unsigned j = 0; j < m_holes[i].size(); ++j) {
+                if (m_hole_enabled[i][j]) {
+                    expr * premise_var = m.mk_fresh_const("__pr", m.mk_bool_sort());
+                    assumption_vars.push_back(premise_var);
                 }
             }
-
-            // TODO: make everything expr_ref_list!
-            vector< ptr_vector<expr> > renamed_exprs = replace_bound_vars(m, true, delta, to_rename, free_var_sorts, free_var_names);
-            for (unsigned i = 0; i < renamed_exprs[0].size(); ++i) {
-                result.push_back(renamed_exprs[0][i]);
-            }
-
-            ptr_vector<expr> tmp;
-            fill_holes(true, renamed_exprs[1].size(), renamed_exprs[1].c_ptr(), delta, tmp, free_var_sorts, free_var_names);
-            head_implicants.push_back(tmp);
-            free_var_sorts.reset();
-            free_var_names.reset();
-            delta = 0;
-            for (unsigned i = 2; i < renamed_exprs.size(); ++i) {
-                tmp.reset();
-                fill_holes(false, renamed_exprs[i].size(), renamed_exprs[i].c_ptr(), delta, tmp, free_var_sorts, free_var_names);
-                call_implicants.push_back(tmp);
-            }
         }
+        rule_vector rules_buf;
+        rules_buf.resize(merged_stratum.size());
+        helper(0, rules_buf, merged_stratum, result, head_implicants, call_implicants, delta, free_var_sorts, free_var_names, strata);
 
         for (unsigned i = 0; i < assumption_vars.size(); ++i) {
             ptr_vector<expr> implied_heads;
@@ -402,7 +450,6 @@ namespace datalog {
             result.push_back(m.mk_implies(assumption_vars[i], head_conj));
             conclusions.push_back(call_conj);
         }
-
         flatten_and(result);
         return result;
     }
@@ -414,12 +461,14 @@ namespace datalog {
         }
         out << "\n     holes:";
         for (unsigned i = 0; i < m_holes.size(); ++i) {
-            out << " " << (m_hole_enabled[i] ? "" : "!!!") << mk_pp(m_holes[i], m);
+            for (unsigned j = 0; j < m_holes[i].size(); ++j) {
+                out << " " << (m_hole_enabled[i][j] ? "" : "!!!") << mk_pp(m_holes[i][j], m);
+            }
         }
         out << "\n";
     }
 
-    rule_ref lemma::enrich_rule(rule & r, rule_set & rules) {
+    rule_ref lemma::enrich_rule(rule & r, rule_vector const & rules, rule_set & all_rules) {
         ptr_vector<sort> sorts;
         r.get_vars(m, sorts);
         ptr_vector<app> new_tail;
@@ -430,21 +479,38 @@ namespace datalog {
             new_tail[i] = r.get_tail(i);
             new_tail_neg[i] = r.is_neg_tail(i);
         }
+        vector< ptr_vector<expr> > head;
+        for (rule_vector::const_iterator it = rules.begin(); it != rules.end(); ++it) {
+            head.push_back(ptr_vector<expr>((*it)->get_head()->get_num_args(), (*it)->get_head()->get_args()));
+        }
         unsigned delta = sorts.size();
         ptr_vector<expr> appendix;
         ptr_vector<sort> tmp1;
         svector<symbol> tmp2;
-        fill_holes(false, r.get_head()->get_num_args(), r.get_head()->get_args(), delta, appendix, tmp1, tmp2);
+        fill_holes(false, head, delta, appendix, tmp1, tmp2);
         for (ptr_vector<expr>::const_iterator it = appendix.begin(); it != appendix.end(); ++it) {
             new_tail.push_back(to_app(*it));
             new_tail_neg.push_back(false);
         }
 
-        rule_manager & rm = rules.get_rule_manager();
+        rule_manager & rm = all_rules.get_rule_manager();
         rule_ref new_rule(rm);
         new_rule = rm.mk(r.get_head(), new_tail.size(), new_tail.c_ptr(), new_tail_neg.c_ptr(), r.name(), false);
-        rules.replace_rule(&r, new_rule.get());
         return new_rule;
+    }
+
+    bool lemma::is_empty() {
+        if (m_constraint.empty()) {
+            return true;
+        }
+        for (unsigned i = 0; i < m_holes.size(); ++i) {
+            for (unsigned j = 0; j < m_holes[i].size(); ++j) {
+                if (m_hole_enabled[i][j]) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     // -----------------------------------
@@ -463,6 +529,24 @@ namespace datalog {
 
     bool mk_synchronize::is_recursive_app(rule & r, app * app) const {
         return app && r.get_head() && r.get_head()->get_decl() == app->get_decl();
+    }
+
+    bool mk_synchronize::exists_recursive(app * app, rule_set & rules) const {
+        unsigned current_rule = 0;
+        unsigned rules_size = rules.get_num_rules();
+        while (current_rule < rules_size) {
+            rule *r = rules.get_rule(current_rule);
+            unsigned positive_tail_size = r->get_positive_tail_size();
+            for (unsigned i = 0; i < positive_tail_size; ++i) {
+                func_decl* app_decl = app->get_decl();
+                if (app && r->get_head() && r->get_decl() == app_decl && r->get_decl(i) == app_decl) {
+                    return true;
+                }
+            }
+            ++current_rule;
+        }
+        return false;
+        // return true;
     }
 
     rule * mk_synchronize::get_original_rule(rule * r) const {
@@ -546,14 +630,18 @@ namespace datalog {
         return result;
     }
 
-    lemma * mk_synchronize::mine_lemma_from_rule(rule & r, app * non_rec_app) const {
+    lemma * mk_synchronize::mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) const {
         ptr_vector<expr> conjuncts;
-        ptr_vector<expr> holes;
+        vector< ptr_vector<expr> > holes;
         conjuncts.resize(r.get_tail_size() - r.get_uninterpreted_tail_size());
         for (unsigned i = r.get_uninterpreted_tail_size(), j = 0; i < r.get_tail_size(); ++i, ++j) {
             conjuncts[j] = r.get_tail(i);
         }
-        return alloc(lemma, m, conjuncts, ptr_vector<expr>(non_rec_app->get_num_args(), non_rec_app->get_args()));
+        for (ptr_vector<app>::const_iterator it = apps.begin(); it != apps.end(); ++it) {
+            holes.push_back(ptr_vector<expr>((*it)->get_num_args(), (*it)->get_args()));
+        }
+
+        return alloc(lemma, m, conjuncts, holes);
     }
 
     obj_hashtable<expr> mk_synchronize::extract_invariant(expr_ref_vector const & constraint, ptr_vector<expr> const & assumption_vars,
@@ -738,81 +826,6 @@ namespace datalog {
         }
     }
 
-    void mk_synchronize::propagate_constraint(rule & r, app * non_rec_app, rule_set & rules) {
-        m_stratifier = alloc(reachability_stratifier, *m_graph);
-        if (!m_stratifier->validate_mutual_recursion()) {
-            return;
-        }
-
-        reachability_stratifier::comp_vector const & strata = m_stratifier->get_strats();
-        ptr_addr_map<reachability_stratifier::item_set, lemma *> strata2lemmas;
-        for (unsigned i = strata.size(); i > 0; --i) {
-            reachability_stratifier::item_set & stratum = *strata[i-1];
-            if (stratum.contains(&r)) {
-                SASSERT(strata2lemmas.empty());
-                lemma * source_lemma = mine_lemma_from_rule(r, non_rec_app);
-                strata2lemmas.insert(&stratum, source_lemma);
-                // for (reachability_stratifier::item_set::iterator it = stratum.begin(); it != stratum.end(); ++it) {
-                //     std::cout << (*it)->name() << " ";
-                // }
-                // std::cout << std::endl;
-                // std::cout << "--------------------------------\n";
-                // std::cout << "a. for stratum ";
-                // reachability_stratifier::item_set & s = stratum;
-                // for (reachability_stratifier::item_set::iterator it = s.begin(); it != s.end(); ++it) {
-                //     std::cout << (*it)->name() << " ";
-                // }
-                // std::cout << "got\n";
-                // source_lemma->display(std::cout);
-                // std::cout << "--------------------------------\n";
-            } else if (!stratum.empty() && (*stratum.begin())->get_head()->get_decl() == non_rec_app->get_decl() && !m_stratifier->is_non_recursive_stratum(stratum)) {
-                ptr_vector<expr> assumption_vars, conclusions;
-                ptr_vector<lemma> source_lemmas;
-                for (ptr_addr_map<reachability_stratifier::item_set, lemma *>::iterator it = strata2lemmas.begin(); it != strata2lemmas.end(); ++it) {
-                    if (m_stratifier->strata_connected(*(it->m_key), stratum)) {
-                        source_lemmas.push_back(strata2lemmas[it->m_key]);
-                    }
-                }
-                lemma * source_lemma = alloc(lemma, m, source_lemmas);
-                ptr_vector<sort> free_var_sorts;
-                svector<symbol> free_var_names;
-                expr_ref_vector e = (*source_lemma)(stratum, assumption_vars, conclusions, free_var_sorts, free_var_names);
-                free_var_names.reverse();
-                free_var_sorts.reverse();
-                obj_hashtable<expr> invariant = extract_invariant(e, assumption_vars, conclusions, free_var_sorts, free_var_names);
-                lemma * resulting_lemma = alloc(lemma, m, *source_lemma, assumption_vars, invariant);
-                // for (reachability_stratifier::item_set::iterator it = stratum.begin(); it != stratum.end(); ++it) {
-                //     std::cout << (*it)->name() << " ";
-                // }
-                // std::cout << std::endl;
-                strata2lemmas.insert(&stratum, resulting_lemma);
-                // std::cout << "--------------------------------\n";
-                // std::cout << "b. for stratum ";
-                // reachability_stratifier::item_set &s = stratum;
-                // for (reachability_stratifier::item_set::iterator it = s.begin(); it != s.end(); ++it) {
-                //     std::cout << (*it)->name() << " ";
-                // }
-                // std::cout << "got\n";
-                // resulting_lemma->display(std::cout);
-                // std::cout << "--------------------------------\n";
-            }
-        }
-        for (unsigned i = strata.size(); i > 0; --i) {
-            reachability_stratifier::item_set & stratum = *strata[i-1];
-            if (!stratum.empty() && (*stratum.begin())->get_head()->get_decl() == non_rec_app->get_decl() && !m_stratifier->is_non_recursive_stratum(stratum)) {
-                lemma * resulting_lemma = strata2lemmas[&stratum];
-                for (reachability_stratifier::item_set::iterator it = stratum.begin(); it != stratum.end(); ++it) {
-                    // std::cout << "================================ENRICHING RULE " << (*it)->name() << ":" << std::endl;
-                    // std::cout << "BEFORE:\n";
-                    // (*it)->display(m_ctx, std::cout);
-                    rule_ref new_rule = resulting_lemma->enrich_rule(**it, rules);
-                    // std::cout << "AFTER:\n";
-                    // new_rule->display(m_ctx, std::cout);
-                }
-            }
-        }
-    }
-
     app * mk_synchronize::product_application(ptr_vector<app> const & apps, func_decl * pred) {
         ptr_vector<app>::const_iterator it = apps.begin(), end = apps.end();
         unsigned args_num = 0;
@@ -832,7 +845,7 @@ namespace datalog {
         return m.mk_app(pred, args_num, args.c_ptr());
     }
 
-    rule_ref mk_synchronize::mk_synchronize::product_rule(rule_vector const & rules, func_decl * pred) {
+    rule_ref mk_synchronize::product_rule(rule_vector const & rules, func_decl * pred) {
         unsigned n = rules.size();
 
         string_buffer<> buffer;
@@ -917,9 +930,162 @@ namespace datalog {
         return new_rule;
     }
 
-    void mk_synchronize::merge_rules(unsigned idx, ptr_vector<func_decl> const & decls, rule_vector &buf,
-            vector<rule_vector> const & merged_rules, rule_set & all_rules, func_decl * pred) {
-        if (idx >= decls.size()) {
+    bool mk_synchronize::merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred) {
+        m_stratifier = alloc(reachability_stratifier, *m_graph);
+        if (!m_stratifier->validate_mutual_recursion()) {
+            return false;
+        }
+        // m_stratifier->display(std::cout);
+        reachability_stratifier::comp_vector const & strata = m_stratifier->get_strats();
+        lemma * source_lemma = mine_lemma_from_rule(r, apps);
+
+        // std::cout << "--------------------------------\n";
+        // std::cout << "a. for stratum ";
+        // std::cout << "got\n";
+        // source_lemma->display(std::cout);
+        // std::cout << "--------------------------------\n";
+
+        vector<reachability_stratifier::comp_vector> merged_stratum;
+        vector< vector<unsigned> > merged;
+        unsigned n = apps.size();
+        merged_stratum.resize(n);
+        merged.resize(n);
+        for (unsigned j = 0; j < n; ++j) {
+            for (unsigned i = strata.size(); i > 0; --i) {
+                reachability_stratifier::item_set & stratum = *strata[i-1];
+                if (!stratum.empty() && (*stratum.begin())->get_head()->get_decl() == apps[j]->get_decl()) {
+                    merged_stratum[j].push_back(&stratum);
+                    // for (reachability_stratifier::item_set::iterator it = stratum.begin(); it != stratum.end(); ++it) {
+                    //     std::cout << (*it)->name() << " ";
+                    // }
+                    // std::cout << std::endl;
+                    merged[j].push_back(i-1);
+                }
+            }
+        }
+        vector2lemma_map strata2lemmas;
+        vector<unsigned> stratum_buf;
+        stratum_buf.resize(n);
+        compute_lemmas(0, merged, stratum_buf, *source_lemma, strata2lemmas, strata);
+
+
+        stratum_buf.reset(); stratum_buf.resize(n);
+        bool empty = true;
+        for (vector2lemma_map::iterator it = strata2lemmas.begin(); it != strata2lemmas.end(); ++it) {
+            if (!((it->m_value)->is_empty())) {
+                empty = false;
+                break;
+            }
+        }
+        if(!empty) {
+            merge(0, merged, stratum_buf, strata2lemmas, all_rules, pred, strata);
+            return true;
+        }
+        return false;
+    }
+
+    void mk_synchronize::compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum,
+        vector<unsigned> & stratum_buf, lemma & source_lemma, vector2lemma_map & strata2lemmas,
+        reachability_stratifier::comp_vector const & strata) {
+        if (idx >= merged_stratum.size()) {
+
+            bool recursive = false;
+            for (unsigned i = stratum_buf.size(); i > 0; --i) {
+                if (!m_stratifier->is_non_recursive_stratum(*strata[stratum_buf[i-1]])) {
+                    recursive = true;
+                    break;
+                }
+            }
+            if (!recursive) {
+                return;
+            }
+
+            ptr_vector<lemma> source_lemmas;
+            source_lemmas.push_back(&source_lemma);
+            if (!strata2lemmas.empty()) {
+                for (vector2lemma_map::iterator it = strata2lemmas.begin(); it != strata2lemmas.end(); ++it) {
+                    bool connected = true;
+                    for (unsigned i = stratum_buf.size(); i > 0; --i) {
+                        if (!m_stratifier->strata_connected(*strata[(it->m_key)[i-1]], *strata[stratum_buf[i-1]])) {
+                            connected = false;
+                            break;
+                        }
+                    }
+                    if (connected) {
+                        source_lemmas.push_back(strata2lemmas[it->m_key]);
+                    }
+                }
+            }
+            lemma * source_lemma = alloc(lemma, m, source_lemmas);
+
+            ptr_vector<expr> assumption_vars, conclusions;
+            ptr_vector<sort> free_var_sorts;
+            svector<symbol> free_var_names;
+            expr_ref_vector e = (*source_lemma)(stratum_buf, assumption_vars, conclusions, free_var_sorts, free_var_names, strata);
+            free_var_names.reverse();
+            free_var_sorts.reverse();
+            obj_hashtable<expr> invariant = extract_invariant(e, assumption_vars, conclusions, free_var_sorts, free_var_names);
+            lemma * resulting_lemma = alloc(lemma, m, *source_lemma, assumption_vars, invariant);
+
+            // std::cout << "--------------------------------\n";
+            // std::cout << "b. for stratum ";
+            // for (unsigned i = 0; i < stratum_buf.size(); ++i) {
+            //     std::cout << i << " " ;
+            //     for (reachability_stratifier::item_set::iterator it = strata[stratum_buf[i]]->begin(); it != strata[stratum_buf[i]]->end(); ++it) {
+            //         std::cout << (*it)->name() << " ";
+            //     }
+            // }
+            // std::cout << "got\n";
+            // resulting_lemma->display(std::cout);
+            // std::cout << "--------------------------------\n";
+            // std::cout << std::endl;
+
+            strata2lemmas.insert(stratum_buf, resulting_lemma);
+            return;
+        }
+
+        vector<unsigned> const & pred_rules = merged_stratum[idx];
+        for (vector<unsigned>::const_iterator it = pred_rules.begin(); it != pred_rules.end(); ++it) {
+            stratum_buf[idx] = *it;
+            compute_lemmas(idx + 1, merged_stratum, stratum_buf, source_lemma, strata2lemmas, strata);
+        }
+    }
+
+    void mk_synchronize::merge(unsigned idx, vector< vector<unsigned> > const & merged_stratum,
+            vector<unsigned> & stratum_buf,  vector2lemma_map & strata2lemmas,
+            rule_set & all_rules, func_decl * pred, reachability_stratifier::comp_vector const & strata) {
+         if (idx >= merged_stratum.size()) {
+            // for (unsigned i = stratum_buf.size(); i > 0; --i) {
+            //     for (reachability_stratifier::item_set::iterator it = strata[stratum_buf[i-1]]->begin(); it != strata[stratum_buf[i-1]]->end(); ++it) {
+            //         std::cout << (*it)->name() << " ";
+            //     }
+            // }
+            lemma *source_lemma = NULL;
+            if (strata2lemmas.contains(stratum_buf)) {
+                source_lemma = strata2lemmas[stratum_buf];
+            }
+            rule_vector rules_buf;
+            rules_buf.resize(merged_stratum.size());
+            // if (source_lemma != NULL) {
+            //     std::cout << "LEMMA FOR MERGE" << std::endl;
+            //     source_lemma->display(std::cout);
+            // }
+            unsigned var_idx = 0;
+            merge_rules(0, rules_buf, stratum_buf, all_rules, pred, *source_lemma, var_idx, strata);
+            return;
+        }
+
+        vector<unsigned> const & pred_stratum = merged_stratum[idx];
+        for (vector<unsigned>::const_iterator it = pred_stratum.begin(); it != pred_stratum.end(); ++it) {
+            stratum_buf[idx] = *it;
+            merge(idx + 1, merged_stratum, stratum_buf, strata2lemmas, all_rules, pred, strata);
+        }
+    }                                                                                         \
+
+    void mk_synchronize::merge_rules(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
+         rule_set & all_rules, func_decl * pred, lemma & source_lemma, unsigned & var_idx,
+         reachability_stratifier::comp_vector const & strata) {
+        if (idx >= merged_rules.size()) {
             // //----
             // bool all_tauto = true;
             // for (unsigned i = 0; i < buf.size(); ++i) {
@@ -930,7 +1096,16 @@ namespace datalog {
             // }
             // if (!all_tauto) {
             //----
-            rule_ref product = product_rule(buf, pred);
+            rule_vector renamed_rules;
+            renamed_rules.resize(buf.size());
+            for (unsigned i = 0; i < buf.size(); ++i) {
+                renamed_rules[i] = rename_bound_vars_in_rule(buf[i], var_idx);
+            }
+            rule_ref product = product_rule(renamed_rules, pred);
+            if (&source_lemma != NULL) {
+                product = source_lemma.enrich_rule(*product.get(), renamed_rules, all_rules);
+            }
+
             m_prod2orig.insert(product.get(), alloc(rule_vector, buf));
             for (unsigned i = 0; i < buf.size(); ++i) {
                 std::pair<unsigned, rule*> key(i, get_original_rule(buf[i]));
@@ -948,10 +1123,10 @@ namespace datalog {
             return;
         }//}
 
-        rule_vector const & pred_rules = merged_rules[idx];
-        for (rule_vector::const_iterator it = pred_rules.begin(); it != pred_rules.end(); ++it) {
+        obj_hashtable<rule> & pred_rules = *strata[merged_rules[idx]];
+        for (obj_hashtable<rule>::iterator it = pred_rules.begin(); it != pred_rules.end(); ++it) {
             buf[idx] = *it;
-            merge_rules(idx + 1, decls, buf, merged_rules, all_rules, pred);
+            merge_rules(idx + 1, buf, merged_rules, all_rules, pred, source_lemma, var_idx, strata);
         }
     }
 
@@ -960,7 +1135,7 @@ namespace datalog {
         for (unsigned i = 0; i < r.get_positive_tail_size(); ++i) {
             app* application = r.get_tail(i);
             // TODO: filter out merging applications of non-recursive relations...
-            if (!is_recursive_app(r, application)) {
+            if (!is_recursive_app(r, application) && exists_recursive(application, rules)) {
                 non_recursive_applications.push_back(application);
             }
         }
@@ -968,6 +1143,7 @@ namespace datalog {
             return;
         }
 
+        printf("MERGING %d APPLICATIONS...\n", non_recursive_applications.size());
         string_buffer<> buffer;
         ptr_vector<sort> domain;
         ptr_vector<app>::const_iterator it = non_recursive_applications.begin(), end = non_recursive_applications.end();
@@ -992,23 +1168,23 @@ namespace datalog {
             merged_decls[i] = non_recursive_applications[i]->get_decl();
         }
 
-        vector<rule_vector> renamed_rules = rename_bound_vars(merged_decls, rules);
-
-        merge_rules(0, merged_decls, rules_buf, renamed_rules, rules, product_pred);
-
+        // vector<rule_vector> renamed_rules = rename_bound_vars(merged_decls, rules);
         app * replacing_app;
-        rule_ref result = replace_applications(r, non_recursive_applications, product_pred, replacing_app);
-        rules.replace_rule(&r, result.get());
 
-        update_reachability_graph(product_pred, rules);
-        update_reachability_graph(product_pred, non_recursive_applications, &r, result.get(), rules);
+        if (merge_if_needed(r, non_recursive_applications, rules, product_pred)) {
+            printf("MERGE\n");
+            rule_ref result = replace_applications(r, non_recursive_applications, product_pred, replacing_app);
+            rules.replace_rule(&r, result.get());
 
-        propagate_constraint(*result.get(), replacing_app, rules);
-        reset_dealloc_values(m_prod2orig);
-        for (std::map<std::pair<unsigned, rule*>, std::set<rule*> *>::const_iterator it = m_orig2prod.begin(); it != m_orig2prod.end(); ++it) {
-            dealloc(it->second);
+            update_reachability_graph(product_pred, rules);
+            update_reachability_graph(product_pred, non_recursive_applications, &r, result.get(), rules);
+            // m_graph->display(std::cout);
+            reset_dealloc_values(m_prod2orig);
+            for (std::map<std::pair<unsigned, rule*>, std::set<rule*> *>::const_iterator it = m_orig2prod.begin(); it != m_orig2prod.end(); ++it) {
+                dealloc(it->second);
+            }
+            m_orig2prod.clear();
         }
-        m_orig2prod.clear();
     }
 
     void mk_synchronize::tautologically_extend(rule_set & rules, ptr_vector<func_decl> const & decls) {
