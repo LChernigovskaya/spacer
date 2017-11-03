@@ -86,7 +86,7 @@ namespace datalog {
             ptr_vector<expr> & conclusions, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names,
             reachability_stratifier::comp_vector const & strata);
 
-        rule_ref enrich_rule(rule & r, rule_vector const & rules, rule_set & all_rules);
+        rule_ref enrich_rule(rule & r, vector<unsigned> const & num_rules, rule_set & all_rules);
 
         void display( std::ostream & out );
 
@@ -134,14 +134,14 @@ namespace datalog {
         app* product_application(ptr_vector<app> const & apps, func_decl * pred);
         rule_ref product_rule(rule_vector const & rules, func_decl * pred);
 
-        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred);
+        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred, unsigned current_lemma);
         void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum, vector<unsigned> & stratum_buf,
         lemma & source_lemma, vector2lemma_map & strata2lemmas,
         reachability_stratifier::comp_vector const & strata);
         void merge_rules(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
          rule_set & all_rules, func_decl * pred, lemma & source_lemma, unsigned & var_idx,
          reachability_stratifier::comp_vector const & strata);
-        void merge_applications(rule & r, rule_set & rules);
+        void merge_applications(rule & r, rule_set & rules, unsigned current_lemma);
         void tautologically_extend(rule_set & rules, ptr_vector<func_decl> const & decls);
         void merge(unsigned idx, vector< vector<unsigned> > const & merged_stratum,
             vector<unsigned> & stratum_buf, vector2lemma_map & strata2lemmas,
