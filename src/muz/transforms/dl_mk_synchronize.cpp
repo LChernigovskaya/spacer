@@ -120,7 +120,7 @@ namespace datalog {
 
     bool rule_reachability_graph::check_reachability(rule & src, unsigned tail_idx, rule & dst, rule_ref & tmp) {
         // TODO: m_unify.apply simply simplifies interpreted tail. Here we should check it for satisfiability!
-        return m_unify.unify_rules(src, tail_idx, dst) && m_unify.apply(src, tail_idx, dst, tmp)
+        return m_unify.unify_rules(src, tail_idx, dst) && m_unify.apply(src, tail_idx, dst, tmp);
         // if (m_unify.unify_rules(src, tail_idx, dst) &&
         //     m_unify.apply(src, tail_idx, dst, tmp)) {
         //     expr_ref_vector s1 = m_unify.get_rule_subst(src, true);
@@ -292,11 +292,13 @@ namespace datalog {
         }
         for (unsigned i = 0; i < first_lemma->m_hole_enabled.size(); ++i) {
             for (unsigned j = 0; j < first_lemma->m_hole_enabled[i].size(); ++j) {
-                bool in_every_lemma = true;
-                for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
-                    if (!(*it)->m_hole_enabled[i][j]) {
-                        in_every_lemma = false;
-                        break;
+                bool in_every_lemma = first_lemma->m_hole_enabled[i][j];
+                if (in_every_lemma) {
+                    for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
+                        if (!(*it)->m_hole_enabled[i][j]) {
+                            in_every_lemma = false;
+                            break;
+                        }
                     }
                 }
                 m_hole_enabled[i][j] = in_every_lemma;
@@ -933,6 +935,7 @@ namespace datalog {
                 }
             }
         }
+        // m_stratifier->display(std::cout);
         lemma * source_lemma = mine_lemma_from_rule(r, apps);
         rules2lemma_map rules2lemmas;
         rule_vector rules;
@@ -1027,6 +1030,10 @@ namespace datalog {
             std::cout << rules_queue.size() << std::endl;
             rule_vector current_rules = rules_queue.front(); rules_queue.pop();
 
+            // std::cout << "current rules" << std::endl;
+            // for (unsigned i = 0; i < current_rules.size(); ++i) {
+            //     current_rules[i]->display(m_ctx, std::cout);
+            // }
             vector<rule_vector> outgoing_vertices;
             vector<rule_reachability_graph::item_set> outgoing_deps;
             vector<rule_vector> incoming_vertices;
@@ -1058,10 +1065,15 @@ namespace datalog {
             ptr_vector<lemma> source_lemmas;
             for (vector<rule_vector>::iterator it = incoming_vertices.begin(); it != incoming_vertices.end(); ++it) {
                 if (rules2lemmas.contains(*it)) {
+                    // std::cout << "lemmas" << std::endl;
+                    // rules2lemmas[*it]->display(std::cout);
                     source_lemmas.push_back(rules2lemmas[*it]);
                 }
             }
             lemma *source_lemma = alloc(lemma, m, source_lemmas);
+
+            // std::cout << "source lemma" << std::endl;
+            // source_lemma->display(std::cout);
 
             ptr_vector<expr> assumption_vars, conclusions;
             ptr_vector<sort> free_var_sorts;
@@ -1077,7 +1089,8 @@ namespace datalog {
                     rules_queue.push(*it);
                 }
             }
-            resulting_lemma->display(std::cout);
+            // std::cout << "resulting lemma" << std::endl;
+            // resulting_lemma->display(std::cout);
         }
     }
 
