@@ -35,6 +35,9 @@ namespace datalog {
     class rule_reachability_graph : public rule_dependencies_base<rule> {
         rule_set const & m_rules;
         rule_unifier     m_unify;
+        ast_manager&    m;
+        smt_params  m_smt_params;
+        smt::kernel m_solver;
 
         virtual void populate_one(rule * r);
         bool check_reachability(rule & src, unsigned tail_idx, rule & dst, rule_ref & tmp);

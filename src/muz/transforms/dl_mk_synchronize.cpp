@@ -111,7 +111,9 @@ namespace datalog {
     rule_reachability_graph::rule_reachability_graph(context & ctx, rule_set const & rules)
           : rule_dependencies_base(ctx),
             m_rules(rules),
-            m_unify(ctx) {
+            m_unify(ctx),
+            m(ctx.get_manager()),
+            m_solver(m, m_smt_params) {
         populate(rules);
     }
 
@@ -119,8 +121,26 @@ namespace datalog {
     }
 
     bool rule_reachability_graph::check_reachability(rule & src, unsigned tail_idx, rule & dst, rule_ref & tmp) {
-        // TODO: m_unify.apply simply simplifies interpreted tail. Here we should check it for satisfiability!
-        return m_unify.unify_rules(src, tail_idx, dst) && m_unify.apply(src, tail_idx, dst, tmp);
+        if (m_unify.unify_rules(src, tail_idx, dst)) {
+            if (m_unify.apply(src, tail_idx, dst, tmp)) {
+                rule * r = tmp.get();
+                m_solver.reset();
+                ptr_vector<expr> interpreted_tail;
+                for (unsigned i = r->get_uninterpreted_tail_size(); i < r->get_tail_size(); ++i) {
+                    interpreted_tail.push_back(r->get_tail(i));
+                }
+                unsigned delta = 0;
+                ptr_vector<expr> exprs = replace_vars_with_consts(m, delta, interpreted_tail.size(), interpreted_tail.c_ptr());
+                for (unsigned i = 0; i < exprs.size(); ++i) {
+                    m_solver.assert_expr(exprs[i]);
+                }
+                lbool is_sat = m_solver.check();
+                // std::cout << "got " << is_sat << std::endl;
+                return is_sat == l_true;
+            }
+            return false;
+        }
+        return false;
         // if (m_unify.unify_rules(src, tail_idx, dst) &&
         //     m_unify.apply(src, tail_idx, dst, tmp)) {
         //     expr_ref_vector s1 = m_unify.get_rule_subst(src, true);
@@ -935,7 +955,7 @@ namespace datalog {
                 }
             }
         }
-        // m_stratifier->display(std::cout);
+        m_stratifier->display(std::cout);
         lemma * source_lemma = mine_lemma_from_rule(r, apps);
         rules2lemma_map rules2lemmas;
         rule_vector rules;
