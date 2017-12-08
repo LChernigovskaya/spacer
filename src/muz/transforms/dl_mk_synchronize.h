@@ -154,6 +154,7 @@ namespace datalog {
         obj_map<rule, rule*> m_rule2orig;
         std::map<std::pair<unsigned, rule*>, std::set<rule*> *> m_orig2prod;
         obj_map<rule, rule_vector*> m_prod2orig;
+        std::map<symbol, lemma*> cache;
 
         bool is_recursive_app(rule & r, app * app) const;
         bool exists_recursive(app * app, rule_set & rules) const;
@@ -173,7 +174,7 @@ namespace datalog {
         app* product_application(ptr_vector<app> const & apps, func_decl * pred);
         rule_ref product_rule(rule_vector const & rules, func_decl * pred);
 
-        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred);
+        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred, symbol const name);
         void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum,
             vector<unsigned> & stratum_buf, rules2lemma_map & rules2lemmas,
             reachability_stratifier::comp_vector const & strata, rule & r, rule_set & all_rules);
@@ -189,6 +190,11 @@ namespace datalog {
             rule_set & all_rules, func_decl * pred, reachability_stratifier::comp_vector const & strata);
         void merge_stratums(unsigned idx, rule_vector &buf, vector<rule_reachability_graph::item_set> const & merged_rules,
             vector<rule_vector> & vertices);
+        struct app_compare {
+            bool operator()(app* a, app* b) const {
+                return a->get_decl()->get_name() > b->get_decl()->get_name();
+            }
+        };
 
     public:
         /**

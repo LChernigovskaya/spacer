@@ -34,6 +34,7 @@ Revision History:
 #include"dl_mk_subsumption_checker.h"
 #include"dl_mk_scale.h"
 #include"dl_mk_synchronize.h"
+#include"dl_mk_mutual_recursion_eliminator.h"
 #include"fixedpoint_params.hpp"
 
 namespace datalog {
@@ -90,6 +91,7 @@ namespace datalog {
             transf.register_plugin(alloc(datalog::mk_magic_symbolic, ctx, 36020));
         }
         if (ctx.get_params().datalog_synchronization()) {
+            transf.register_plugin(alloc(datalog::mk_mutual_recursion_eliminator, ctx, 34910));
             transf.register_plugin(alloc(datalog::mk_synchronize, ctx, 34900));
         }
         ctx.transform_rules(transf);

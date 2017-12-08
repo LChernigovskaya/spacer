@@ -938,7 +938,7 @@ namespace datalog {
         return new_rule;
     }
 
-    bool mk_synchronize::merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred) {
+    bool mk_synchronize::merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred, symbol const name) {
         m_stratifier = alloc(reachability_stratifier, *m_graph);
         if (!m_stratifier->validate_mutual_recursion()) {
             return false;
@@ -955,7 +955,7 @@ namespace datalog {
                 }
             }
         }
-        m_stratifier->display(std::cout);
+        // m_stratifier->display(std::cout);
         lemma * source_lemma = mine_lemma_from_rule(r, apps);
         rules2lemma_map rules2lemmas;
         rule_vector rules;
@@ -964,6 +964,13 @@ namespace datalog {
         }
         rules2lemmas.insert(rules, source_lemma);
 
+        std::cout << "Created fresh relation symbol " << name << std::endl;
+        if (cache.find(name) != cache.end() && *cache[name] == *source_lemma) {
+            std::cout << "equal" << std::endl;
+            cache[name] -> display(std::cout);
+            return true;
+        }
+        cache.insert(std::pair<symbol,lemma*>(name, source_lemma));
         std::cout << "--------------------------------\n";
         std::cout << "a. for query ";
         std::cout << "got\n";
@@ -1047,7 +1054,7 @@ namespace datalog {
         }
 
         while(!rules_queue.empty()) {
-            std::cout << rules_queue.size() << std::endl;
+            // std::cout << rules_queue.size() << std::endl;
             rule_vector current_rules = rules_queue.front(); rules_queue.pop();
 
             // std::cout << "current rules" << std::endl;
@@ -1203,6 +1210,9 @@ namespace datalog {
         printf("MERGING %d APPLICATIONS...\n", non_recursive_applications.size());
         string_buffer<> buffer;
         ptr_vector<sort> domain;
+
+        std::sort(non_recursive_applications.begin(), non_recursive_applications.end(), app_compare());
+
         ptr_vector<app>::const_iterator it = non_recursive_applications.begin(), end = non_recursive_applications.end();
         for (; it != end; ++it) {
             func_decl* decl = (*it)->get_decl();
@@ -1212,8 +1222,9 @@ namespace datalog {
         }
 
         // TODO: do not forget to check rules.contains(func_decl)
+        symbol name = symbol(buffer.c_str());
         func_decl* orig = non_recursive_applications[0]->get_decl();
-        func_decl* product_pred = m_ctx.mk_fresh_head_predicate(symbol(buffer.c_str()),
+        func_decl* product_pred = m_ctx.mk_fresh_head_predicate(name,
             symbol::null, domain.size(), domain.c_ptr(), orig);
 
         rule_vector rules_buf;
@@ -1222,10 +1233,10 @@ namespace datalog {
 
         app * replacing_app;
 
-        if (merge_if_needed(r, non_recursive_applications, rules, product_pred)) {
+        if (merge_if_needed(r, non_recursive_applications, rules, product_pred, name)) {
             printf("MERGE\n");
-            r.display(m_ctx, std::cout);
-            std::cout << std::endl;
+            // r.display(m_ctx, std::cout);
+            // std::cout << std::endl;
             rule_ref result = replace_applications(r, non_recursive_applications, product_pred, replacing_app);
             update_reachability_graph(product_pred, rules);
             update_reachability_graph(product_pred, non_recursive_applications, &r, result.get(), rules);
@@ -1258,8 +1269,8 @@ namespace datalog {
     }
 
     rule_set * mk_synchronize::operator()(rule_set const & source) {
-        printf("\n\n----------------------------------\nSYNCHRONIZING! SOURCE RULES:\n");
-        source.display(std::cout);
+        // printf("\n\n----------------------------------\nSYNCHRONIZING! SOURCE RULES:\n");
+        // source.display(std::cout);
 
         rule_set* rules = alloc(rule_set, m_ctx);
         rules->inherit_predicates(source);
@@ -1293,9 +1304,11 @@ namespace datalog {
         // }
         // printf("\n------------------------------------------------------------\n");
 
-        printf("\n\n-----------------RESULTING RULES:-----------------\n");
-        rules->display(std::cout);
-        printf("\n\n----------------------------------\n");
+        printf("OUT OF MERGING\n");
+
+        // printf("\n\n-----------------RESULTING RULES:-----------------\n");
+        // rules->display(std::cout);
+        // printf("\n\n----------------------------------\n");
         return rules;
     }
 
