@@ -971,11 +971,11 @@ namespace datalog {
             return true;
         }
         cache.insert(std::pair<symbol,lemma*>(name, source_lemma));
-        std::cout << "--------------------------------\n";
-        std::cout << "a. for query ";
-        std::cout << "got\n";
-        source_lemma->display(std::cout);
-        std::cout << "--------------------------------\n";
+        // std::cout << "--------------------------------\n";
+        // std::cout << "a. for query ";
+        // std::cout << "got\n";
+        // source_lemma->display(std::cout);
+        // std::cout << "--------------------------------\n";
 
         vector<unsigned> stratum_buf;
         stratum_buf.resize(n);
@@ -1269,6 +1269,7 @@ namespace datalog {
     }
 
     rule_set * mk_synchronize::operator()(rule_set const & source) {
+        printf("\n\n----------------------------------\nSYNCHRONIZING! \n");
         // printf("\n\n----------------------------------\nSYNCHRONIZING! SOURCE RULES:\n");
         // source.display(std::cout);
 

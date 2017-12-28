@@ -20,7 +20,12 @@ namespace datalog {
         ast_manager&    m;
         rule_manager&   rm;
         arith_util      m_autil;
-        void merge_mutual_recursion(rule & r, rule_set & rules);
+        void merge_mutual_recursion(rule_set & rules);
+        void merge_mutual_in_tails(rule_set & rules, ptr_vector<func_decl> mutual_functions,
+			obj_map<func_decl, unsigned>, func_decl * product_pred);
+        bool contains_one_of_functions_in_tail(rule & r, ptr_vector<func_decl> functions);
+        void merge_mutual_in_heads(rule_set & rules, ptr_vector<func_decl> mutual_functions,
+			obj_map<func_decl, unsigned> m_func2arg, func_decl * product_pred);
 
     public:
         mk_mutual_recursion_eliminator(context & ctx, unsigned priority);
