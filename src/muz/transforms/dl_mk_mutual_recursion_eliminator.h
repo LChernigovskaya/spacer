@@ -13,7 +13,7 @@
 namespace datalog {
 
     /**
-       \brief Implements an unfolding transformation.
+       \brief Implements a elimination of mutual recursion transformation.
     */
     class mk_mutual_recursion_eliminator : public rule_transformer::plugin {
         context&        m_ctx;

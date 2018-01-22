@@ -540,18 +540,16 @@ namespace datalog {
     }
 
     bool mk_synchronize::exists_recursive(app * app, rule_set & rules) const {
-        unsigned current_rule = 0;
-        unsigned rules_size = rules.get_num_rules();
-        while (current_rule < rules_size) {
-            rule *r = rules.get_rule(current_rule);
+        func_decl* app_decl = app->get_decl();
+        rule_vector const & src_rules = rules.get_predicate_rules(app_decl);
+        for (rule_vector::const_iterator it = src_rules.begin(); it != src_rules.end(); ++it) {
+            rule *r = *it;
             unsigned positive_tail_size = r->get_positive_tail_size();
             for (unsigned i = 0; i < positive_tail_size; ++i) {
-                func_decl* app_decl = app->get_decl();
-                if (app && r->get_head() && r->get_decl() == app_decl && r->get_decl(i) == app_decl) {
+                if (r->get_decl(i) == app_decl) {
                     return true;
                 }
             }
-            ++current_rule;
         }
         return false;
         // return true;
@@ -941,6 +939,7 @@ namespace datalog {
     bool mk_synchronize::merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred, symbol const name) {
         m_stratifier = alloc(reachability_stratifier, *m_graph);
         if (!m_stratifier->validate_mutual_recursion()) {
+            std::cout << "mutual" << std::endl;
             return false;
         }
         vector< vector<unsigned> > merged_stratum;
@@ -967,7 +966,7 @@ namespace datalog {
         std::cout << "Created fresh relation symbol " << name << std::endl;
         if (cache.find(name) != cache.end() && *cache[name] == *source_lemma) {
             std::cout << "equal" << std::endl;
-            cache[name] -> display(std::cout);
+            cache[name]->display(std::cout);
             return true;
         }
         cache.insert(std::pair<symbol,lemma*>(name, source_lemma));
@@ -1221,7 +1220,6 @@ namespace datalog {
             domain.append(decl->get_arity(), decl->get_domain());
         }
 
-        // TODO: do not forget to check rules.contains(func_decl)
         symbol name = symbol(buffer.c_str());
         func_decl* orig = non_recursive_applications[0]->get_decl();
         func_decl* product_pred = m_ctx.mk_fresh_head_predicate(name,
