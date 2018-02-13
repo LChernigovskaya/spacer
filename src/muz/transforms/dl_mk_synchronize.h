@@ -82,60 +82,32 @@ namespace datalog {
         lemma(ast_manager & m, lemma & source, ptr_vector<expr> const & old_assumption_vars, obj_hashtable<expr> const & new_assumption_vars);
 
         expr_ref_vector operator()(rule_vector const & merged_stratum, ptr_vector<expr> & assumption_vars,
-            ptr_vector<expr> & conclusions, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names,
-            reachability_stratifier::comp_vector const & strata);
+            ptr_vector<expr> & conclusions, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names);
 
         rule_ref enrich_rule(rule & r, vector<unsigned> const & num_rules, rule_set & all_rules);
 
         void display( std::ostream & out );
 
         bool is_empty();
-        void operator=(lemma * source_lemma) {
-            m_constraint.resize(source_lemma->m_constraint.size());
-            for (unsigned i = 0; i < m_constraint.size(); ++i) {
-                m_constraint[i] = source_lemma->m_constraint[i];
-            }
-            m_holes.resize(source_lemma->m_holes.size());
-            for (unsigned i = 0; i < source_lemma->m_holes.size(); ++i) {
-                m_holes[i].resize(source_lemma->m_holes[i].size());
-                for (unsigned j = 0; j < m_holes[i].size(); ++j) {
-                    m_holes[i][j] = source_lemma->m_holes[i][j];
-                }
-            }
+        bool operator==(lemma source_lemma);
+    };
 
-            m_hole_enabled.resize(source_lemma->m_hole_enabled.size());
-            for (unsigned i = 0; i < m_hole_enabled.size(); ++i) {
-                m_hole_enabled[i].resize(source_lemma->m_hole_enabled[i].size());
-                for (unsigned j = 0; j < m_hole_enabled[i].size(); ++j) {
-                    m_hole_enabled[i][j] = source_lemma->m_hole_enabled[i][j];
-                }
-            }
-            m_hole_enabled = source_lemma->m_hole_enabled;
-        }
-        bool operator==(lemma source_lemma) {
-            if (m_constraint.size() == source_lemma.m_constraint.size() && m_holes.size() == source_lemma.m_holes.size()) {
-                for (unsigned i = 0; i < m_constraint.size(); ++i) {
-                    if (!source_lemma.m_constraint.contains(m_constraint[i])) {
-                        return false;
-                    }
-                    if (!m_constraint.contains(source_lemma.m_constraint[i])) {
-                        return false;
-                    }
-                }
-                for (unsigned i = 0; i < m_holes.size(); ++i) {
-                    if (m_holes[i].size() != source_lemma.m_holes[i].size()) {
-                        return false;
-                    }
-                    for (unsigned j = 0; j < m_holes[i].size(); ++j) {
-                        if (m_holes[i][j] != source_lemma.m_holes[i][j] || m_hole_enabled[i][j] != source_lemma.m_hole_enabled[i][j]) {
-                            return false;
-                        }
-                    }
-                }
-                return true;
-            }
-            else return false;
-        }
+    class lemma_computing_algorithm {
+    public:
+        virtual lemma * compute_lemma(lemma * source_lemma, rule_vector rules) = 0;
+    };
+
+    class remove_conjuncts_algorithm : public lemma_computing_algorithm {
+        smt_params  m_smt_params;
+        smt::kernel m_solver;
+        ast_manager & m;
+
+        void disable_minimal_unsatisfiable_subset(expr_ref_vector const & set, model_ref const & model, svector<bool> & enabled);
+        obj_hashtable<expr> extract_invariant(expr_ref_vector const & constraint, ptr_vector<expr> const & assumption_vars,
+            ptr_vector<expr> const & conclusions, ptr_vector<sort> const & free_var_sorts, svector<symbol> const & free_var_names);
+    public:
+        remove_conjuncts_algorithm(ast_manager & m);
+        lemma * compute_lemma(lemma * source_lemma, rule_vector rules);
     };
 
     /**
@@ -147,14 +119,13 @@ namespace datalog {
         context&        m_ctx;
         ast_manager&    m;
         rule_manager&   rm;
-        smt_params  m_smt_params;
-        smt::kernel m_solver;
         scoped_ptr<rule_reachability_graph> m_graph;
         scoped_ptr<reachability_stratifier> m_stratifier;
         obj_map<rule, rule*> m_rule2orig;
         std::map<std::pair<unsigned, rule*>, std::set<rule*> *> m_orig2prod;
         obj_map<rule, rule_vector*> m_prod2orig;
         std::map<symbol, lemma*> cache;
+        lemma_computing_algorithm *m_algorithm;
 
         bool is_recursive_app(rule & r, app * app) const;
         bool exists_recursive(app * app, rule_set & rules) const;
@@ -165,9 +136,7 @@ namespace datalog {
         rule_ref replace_applications(rule & r, ptr_vector<app> & apps, func_decl * pred, app *& resulting_app);
 
         lemma * mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) const;
-        obj_hashtable<expr> extract_invariant(expr_ref_vector const & constraint, ptr_vector<expr> const & assumption_vars,
-            ptr_vector<expr> const & conclusions, ptr_vector<sort> const & free_var_sorts, svector<symbol> const & free_var_names);
-        void disable_minimal_unsatisfiable_subset(expr_ref_vector const & set, model_ref const & model, svector<bool> & enabled);
+
         void update_reachability_graph(func_decl * new_rel, ptr_vector<app> const & apps, rule * old_rule, rule * new_rule, rule_set & rules);
         void update_reachability_graph(func_decl * new_rel, rule_set & rules);
 

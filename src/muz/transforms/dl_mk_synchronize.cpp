@@ -373,8 +373,7 @@ namespace datalog {
     }
 
     expr_ref_vector lemma::operator()(rule_vector const & merged_rules, ptr_vector<expr> & assumption_vars,
-            ptr_vector<expr> & conclusions, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names,
-            reachability_stratifier::comp_vector const & strata) {
+            ptr_vector<expr> & conclusions, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names) {
         unsigned n = m_constraint.size();
         unsigned delta = 0;
         expr_ref_vector result(m);
@@ -521,6 +520,171 @@ namespace datalog {
         return true;
     }
 
+    bool lemma::operator==(lemma source_lemma) {
+            if (m_constraint.size() == source_lemma.m_constraint.size() && m_holes.size() == source_lemma.m_holes.size()) {
+                for (unsigned i = 0; i < m_constraint.size(); ++i) {
+                    if (!source_lemma.m_constraint.contains(m_constraint[i])) {
+                        return false;
+                    }
+                    if (!m_constraint.contains(source_lemma.m_constraint[i])) {
+                        return false;
+                    }
+                }
+                for (unsigned i = 0; i < m_holes.size(); ++i) {
+                    if (m_holes[i].size() != source_lemma.m_holes[i].size()) {
+                        return false;
+                    }
+                    for (unsigned j = 0; j < m_holes[i].size(); ++j) {
+                        if (m_holes[i][j] != source_lemma.m_holes[i][j] || m_hole_enabled[i][j] != source_lemma.m_hole_enabled[i][j]) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+            else return false;
+        }
+
+
+    // -----------------------------------
+    //
+    // algorithm of compute lemmas
+    //
+    // -----------------------------------
+
+    remove_conjuncts_algorithm::remove_conjuncts_algorithm(ast_manager & m):
+        m(m),
+        m_solver(m, m_smt_params)
+    {}
+
+    void remove_conjuncts_algorithm::disable_minimal_unsatisfiable_subset(expr_ref_vector const & set, model_ref const & model, svector<bool> & enabled) {
+        smt::kernel solver(m, m_smt_params);
+        // std::cout << "EXTRACTING MINIMAL UNSATISFIABLE SUBSET...\n";
+        unsigned delta = 0;
+        sort * bs = m.mk_bool_sort();
+        ptr_vector<expr> exprs = replace_vars_with_consts(m, delta, set.size(), set.c_ptr());
+        expr_ref_vector assumptions(m);
+        obj_map<expr, unsigned> assumptions2idx;
+        for (unsigned i = 0; i < exprs.size(); ++i) {
+            if (enabled[i]) {
+                // std::cout << "ASSERTING " << mk_pp(exprs[i], m) << std::endl;
+                expr_ref valuation(m);
+                if (model->eval(exprs[i], valuation)) {
+                    expr * assumption = m.mk_fresh_const("__asmpt", bs);
+                    assumptions.push_back(assumption);
+                    assumptions2idx.insert(assumption, i);
+                    solver.assert_expr(m.mk_implies(assumption, valuation));
+                }
+            }
+        }
+        lbool lresult = solver.check(assumptions);
+        SASSERT(lresult == l_false);
+        // std::cout << "RESULT IS " << lresult << "; GOT UNSAT CORE OF SIZE " << solver.get_unsat_core_size() << std::endl;
+        for (unsigned i = 0; i < solver.get_unsat_core_size(); ++i) {
+            expr * core_assumption = solver.get_unsat_core_expr(i);
+            SASSERT(assumptions2idx.contains(core_assumption));
+            enabled[assumptions2idx[core_assumption]] = false;
+        }
+    }
+
+    obj_hashtable<expr> remove_conjuncts_algorithm::extract_invariant(expr_ref_vector const & constraint, ptr_vector<expr> const & assumption_vars,
+            ptr_vector<expr> const & conclusions, ptr_vector<sort> const & free_var_sorts, svector<symbol> const & free_var_names) {
+        SASSERT(assumption_vars.size() == conclusions.size());
+        unsigned n = assumption_vars.size();
+        svector<bool> enabled(n, true);
+        m_solver.reset();
+        for (expr_ref_vector::iterator it = constraint.begin(); it != constraint.end(); ++it) {
+            m_solver.assert_expr(*it);
+            // std::cout << "1. asserting " << mk_pp(*it, m) << std::endl;
+        }
+        expr_ref_vector tmp_conclusions(m);
+        for (expr_ref_vector::iterator it = conclusions.begin(); it != conclusions.end(); ++it) {
+            tmp_conclusions.push_back(*it);
+        } // TODO: expr_ref_vector should be passed initially!
+        // unsigned counter = 0;
+        bool success = false;
+        while (true) {
+            scoped_push push(m_solver);
+            // ptr_vector<expr> conclusion_disjuncts;
+            expr_ref_vector conclusion_disjuncts(m);
+            for (unsigned i = 0; i < n; ++i) {
+                if (enabled[i]) {
+                    m_solver.assert_expr(assumption_vars[i]);
+                    conclusion_disjuncts.push_back(m.mk_not(tmp_conclusions[i].get()));
+                    // std::cout << "2. asserting " << mk_pp(assumption_vars[i], m) << std::endl;
+                }
+            }
+
+            expr * conclusion_body = m.mk_or(conclusion_disjuncts.size(), conclusion_disjuncts.c_ptr());
+            expr * conclusion = m.mk_forall(free_var_names.size(), free_var_sorts.c_ptr(), free_var_names.c_ptr(), conclusion_body);
+            m_solver.assert_expr(conclusion);
+            // std::cout << "3. asserting " << mk_pp(conclusion, m) << std::endl;
+            // std::cout << "checking...\n";
+            lbool is_sat = m_solver.check();
+            // std::cout << "got " << is_sat << std::endl;
+            if (is_sat == l_true) {
+                model_ref model;
+                m_solver.get_model(model);
+                //----
+                // expr_ref modelr(m);
+                // model2expr(model, modelr);
+                // std::cout << "model: " << mk_pp(modelr, m) << std::endl;
+                //----
+                // expr_ref valuation(m);
+                // bool at_least_one_changed = false;
+                // for (unsigned i = 0; i < n; ++i) {
+                //     if (enabled[i]) {
+                //         std::cout << "ASKING FOR " << mk_pp(conclusions[i], m) << std::endl;
+                //         if (model->eval(conclusions[i], valuation) && m.is_false(valuation)) {
+                //             std::cout << "DISABLING " << mk_pp(assumption_vars[i], m) << " and " << mk_pp(conclusions[i], m) << std::endl;
+                //             enabled[i] = false;
+                //             at_least_one_changed = true;
+                //         }
+                //         std::cout << "VALUATION IS " << mk_pp(valuation, m) << std::endl;
+                //     }
+                // }
+                disable_minimal_unsatisfiable_subset(tmp_conclusions, model, enabled);
+                // for (unsigned i = 0; i < conclusions.size(); ++i) {
+                    // at_least_one_changed |= in_mus[i];
+                    // if (!enabled[i]) {
+                    //     std::cout << "DISABLING " << mk_pp(assumption_vars[i], m) << " and " << mk_pp(conclusions[i], m) << std::endl;
+                    // }
+                // }
+                // SASSERT(at_least_one_changed);
+                // if (!at_least_one_changed) {
+                //     std::cout << "WARNING: NOTHING CHANGED!!!\n";
+                // }
+                // if (counter++ == 2) {
+                //     return 0;
+                // }
+            } else {
+                success = is_sat == l_false;
+                break;
+            }
+        }
+        if (!success) {
+            return obj_hashtable<expr>();
+        }
+        obj_hashtable<expr> result;
+        for (unsigned i = 0; i < enabled.size(); ++i) {
+            if (enabled[i]) {
+                result.insert(assumption_vars[i]);
+            }
+        }
+        return result;
+    }
+
+    lemma * remove_conjuncts_algorithm::compute_lemma(lemma * source_lemma, rule_vector rules) {
+        ptr_vector<expr> assumption_vars, conclusions;
+        ptr_vector<sort> free_var_sorts;
+        svector<symbol> free_var_names;
+        expr_ref_vector e = (*source_lemma)(rules, assumption_vars, conclusions, free_var_sorts, free_var_names );
+        free_var_names.reverse();
+        free_var_sorts.reverse();
+        obj_hashtable<expr> invariant = extract_invariant(e, assumption_vars, conclusions, free_var_sorts, free_var_names);
+        return alloc(lemma, m, *source_lemma, assumption_vars, invariant);
+    }
+
     // -----------------------------------
     //
     // transformation
@@ -532,7 +696,7 @@ namespace datalog {
         m_ctx(ctx),
         m(ctx.get_manager()),
         rm(ctx.get_rule_manager()),
-        m_solver(m, m_smt_params)
+        m_algorithm(new remove_conjuncts_algorithm(m))
     {}
 
     bool mk_synchronize::is_recursive_app(rule & r, app * app) const {
@@ -648,123 +812,6 @@ namespace datalog {
         }
 
         return alloc(lemma, m, conjuncts, holes);
-    }
-
-    obj_hashtable<expr> mk_synchronize::extract_invariant(expr_ref_vector const & constraint, ptr_vector<expr> const & assumption_vars,
-            ptr_vector<expr> const & conclusions, ptr_vector<sort> const & free_var_sorts, svector<symbol> const & free_var_names) {
-        SASSERT(assumption_vars.size() == conclusions.size());
-        unsigned n = assumption_vars.size();
-        svector<bool> enabled(n, true);
-        m_solver.reset();
-        for (expr_ref_vector::iterator it = constraint.begin(); it != constraint.end(); ++it) {
-            m_solver.assert_expr(*it);
-            // std::cout << "1. asserting " << mk_pp(*it, m) << std::endl;
-        }
-        expr_ref_vector tmp_conclusions(m);
-        for (expr_ref_vector::iterator it = conclusions.begin(); it != conclusions.end(); ++it) {
-            tmp_conclusions.push_back(*it);
-        } // TODO: expr_ref_vector should be passed initially!
-        // unsigned counter = 0;
-        bool success = false;
-        while (true) {
-            scoped_push push(m_solver);
-            // ptr_vector<expr> conclusion_disjuncts;
-            expr_ref_vector conclusion_disjuncts(m);
-            for (unsigned i = 0; i < n; ++i) {
-                if (enabled[i]) {
-                    m_solver.assert_expr(assumption_vars[i]);
-                    conclusion_disjuncts.push_back(m.mk_not(tmp_conclusions[i].get()));
-                    // std::cout << "2. asserting " << mk_pp(assumption_vars[i], m) << std::endl;
-                }
-            }
-
-            expr * conclusion_body = m.mk_or(conclusion_disjuncts.size(), conclusion_disjuncts.c_ptr());
-            expr * conclusion = m.mk_forall(free_var_names.size(), free_var_sorts.c_ptr(), free_var_names.c_ptr(), conclusion_body);
-            m_solver.assert_expr(conclusion);
-            // std::cout << "3. asserting " << mk_pp(conclusion, m) << std::endl;
-            // std::cout << "checking...\n";
-            lbool is_sat = m_solver.check();
-            // std::cout << "got " << is_sat << std::endl;
-            if (is_sat == l_true) {
-                model_ref model;
-                m_solver.get_model(model);
-                //----
-                // expr_ref modelr(m);
-                // model2expr(model, modelr);
-                // std::cout << "model: " << mk_pp(modelr, m) << std::endl;
-                //----
-                // expr_ref valuation(m);
-                // bool at_least_one_changed = false;
-                // for (unsigned i = 0; i < n; ++i) {
-                //     if (enabled[i]) {
-                //         std::cout << "ASKING FOR " << mk_pp(conclusions[i], m) << std::endl;
-                //         if (model->eval(conclusions[i], valuation) && m.is_false(valuation)) {
-                //             std::cout << "DISABLING " << mk_pp(assumption_vars[i], m) << " and " << mk_pp(conclusions[i], m) << std::endl;
-                //             enabled[i] = false;
-                //             at_least_one_changed = true;
-                //         }
-                //         std::cout << "VALUATION IS " << mk_pp(valuation, m) << std::endl;
-                //     }
-                // }
-                disable_minimal_unsatisfiable_subset(tmp_conclusions, model, enabled);
-                // for (unsigned i = 0; i < conclusions.size(); ++i) {
-                    // at_least_one_changed |= in_mus[i];
-                    // if (!enabled[i]) {
-                    //     std::cout << "DISABLING " << mk_pp(assumption_vars[i], m) << " and " << mk_pp(conclusions[i], m) << std::endl;
-                    // }
-                // }
-                // SASSERT(at_least_one_changed);
-                // if (!at_least_one_changed) {
-                //     std::cout << "WARNING: NOTHING CHANGED!!!\n";
-                // }
-                // if (counter++ == 2) {
-                //     return 0;
-                // }
-            } else {
-                success = is_sat == l_false;
-                break;
-            }
-        }
-        if (!success) {
-            return obj_hashtable<expr>();
-        }
-        obj_hashtable<expr> result;
-        for (unsigned i = 0; i < enabled.size(); ++i) {
-            if (enabled[i]) {
-                result.insert(assumption_vars[i]);
-            }
-        }
-        return result;
-    }
-
-    void mk_synchronize::disable_minimal_unsatisfiable_subset(expr_ref_vector const & set, model_ref const & model, svector<bool> & enabled) {
-        smt::kernel solver(m, m_smt_params);
-        // std::cout << "EXTRACTING MINIMAL UNSATISFIABLE SUBSET...\n";
-        unsigned delta = 0;
-        sort * bs = m.mk_bool_sort();
-        ptr_vector<expr> exprs = replace_vars_with_consts(m, delta, set.size(), set.c_ptr());
-        expr_ref_vector assumptions(m);
-        obj_map<expr, unsigned> assumptions2idx;
-        for (unsigned i = 0; i < exprs.size(); ++i) {
-            if (enabled[i]) {
-                // std::cout << "ASSERTING " << mk_pp(exprs[i], m) << std::endl;
-                expr_ref valuation(m);
-                if (model->eval(exprs[i], valuation)) {
-                    expr * assumption = m.mk_fresh_const("__asmpt", bs);
-                    assumptions.push_back(assumption);
-                    assumptions2idx.insert(assumption, i);
-                    solver.assert_expr(m.mk_implies(assumption, valuation));
-                }
-            }
-        }
-        lbool lresult = solver.check(assumptions);
-        SASSERT(lresult == l_false);
-        // std::cout << "RESULT IS " << lresult << "; GOT UNSAT CORE OF SIZE " << solver.get_unsat_core_size() << std::endl;
-        for (unsigned i = 0; i < solver.get_unsat_core_size(); ++i) {
-            expr * core_assumption = solver.get_unsat_core_expr(i);
-            SASSERT(assumptions2idx.contains(core_assumption));
-            enabled[assumptions2idx[core_assumption]] = false;
-        }
     }
 
     void mk_synchronize::update_reachability_graph(func_decl * new_rel, ptr_vector<app> const & apps, rule * old_rule, rule * new_rule, rule_set & rules) {
@@ -1101,14 +1148,7 @@ namespace datalog {
             // std::cout << "source lemma" << std::endl;
             // source_lemma->display(std::cout);
 
-            ptr_vector<expr> assumption_vars, conclusions;
-            ptr_vector<sort> free_var_sorts;
-            svector<symbol> free_var_names;
-            expr_ref_vector e = (*source_lemma)(current_rules, assumption_vars, conclusions, free_var_sorts, free_var_names, strata);
-            free_var_names.reverse();
-            free_var_sorts.reverse();
-            obj_hashtable<expr> invariant = extract_invariant(e, assumption_vars, conclusions, free_var_sorts, free_var_names);
-            lemma * resulting_lemma = alloc(lemma, m, *source_lemma, assumption_vars, invariant);
+            lemma * resulting_lemma = m_algorithm->compute_lemma(source_lemma, current_rules);
             if (!(rules2lemmas.contains(current_rules)) || !(*resulting_lemma == *rules2lemmas[current_rules])) {
                 rules2lemmas.insert(current_rules, resulting_lemma);
                 for (vector<rule_vector>::const_iterator it = outgoing_vertices.begin(); it != outgoing_vertices.end(); ++it) {
@@ -1269,7 +1309,7 @@ namespace datalog {
     rule_set * mk_synchronize::operator()(rule_set const & source) {
         printf("\n\n----------------------------------\nSYNCHRONIZING! \n");
         // printf("\n\n----------------------------------\nSYNCHRONIZING! SOURCE RULES:\n");
-        // source.display(std::cout);
+        source.display(std::cout);
 
         rule_set* rules = alloc(rule_set, m_ctx);
         rules->inherit_predicates(source);
