@@ -110,7 +110,9 @@ namespace datalog {
     rule_reachability_graph::rule_reachability_graph(context & ctx, rule_set const & rules)
           : rule_dependencies_base(ctx),
             m_rules(rules),
-            m_unify(ctx) {
+            m_unify(ctx),
+            m(ctx.get_manager()),
+            m_solver(m, m_smt_params) {
         populate(rules);
     }
 
@@ -118,8 +120,27 @@ namespace datalog {
     }
 
     bool rule_reachability_graph::check_reachability(rule & src, unsigned tail_idx, rule & dst, rule_ref & tmp) {
-        // TODO: m_unify.apply simply simplifies interpreted tail. Here we should check it for satisfiability!
-        return m_unify.unify_rules(src, tail_idx, dst) && m_unify.apply(src, tail_idx, dst, tmp);
+        if (m_unify.unify_rules(src, tail_idx, dst)) {
+            if (m_unify.apply(src, tail_idx, dst, tmp)) {
+                rule * r = tmp.get();
+                m_solver.reset();
+                ptr_vector<expr> interpreted_tail;
+                for (unsigned i = r->get_uninterpreted_tail_size(); i < r->get_tail_size(); ++i) {
+                    interpreted_tail.push_back(r->get_tail(i));
+                }
+                unsigned delta = 0;
+                ptr_vector<expr> exprs = replace_vars_with_consts(m, delta, interpreted_tail.size(), interpreted_tail.c_ptr());
+                for (unsigned i = 0; i < exprs.size(); ++i) {
+                    m_solver.assert_expr(exprs[i]);
+                }
+                lbool is_sat = m_solver.check();
+                // std::cout << "got " << is_sat << std::endl;
+                return is_sat == l_true;
+            }
+            return false;
+        }
+        return false;
+        // return m_unify.unify_rules(src, tail_idx, dst) && m_unify.apply(src, tail_idx, dst, tmp);
         // if (m_unify.unify_rules(src, tail_idx, dst) &&
         //     m_unify.apply(src, tail_idx, dst, tmp)) {
         //     expr_ref_vector s1 = m_unify.get_rule_subst(src, true);
@@ -291,11 +312,13 @@ namespace datalog {
         }
         for (unsigned i = 0; i < first_lemma->m_hole_enabled.size(); ++i) {
             for (unsigned j = 0; j < first_lemma->m_hole_enabled[i].size(); ++j) {
-                bool in_every_lemma = true;
-                for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
-                    if (!(*it)->m_hole_enabled[i][j]) {
-                        in_every_lemma = false;
-                        break;
+                bool in_every_lemma = first_lemma->m_hole_enabled[i][j];
+                if (in_every_lemma) {
+                    for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
+                        if (!(*it)->m_hole_enabled[i][j]) {
+                            in_every_lemma = false;
+                            break;
+                        }
                     }
                 }
                 m_hole_enabled[i][j] = in_every_lemma;
@@ -536,18 +559,16 @@ namespace datalog {
     }
 
     bool mk_synchronize::exists_recursive(app * app, rule_set & rules) const {
-        unsigned current_rule = 0;
-        unsigned rules_size = rules.get_num_rules();
-        while (current_rule < rules_size) {
-            rule *r = rules.get_rule(current_rule);
+        func_decl* app_decl = app->get_decl();
+        rule_vector const & src_rules = rules.get_predicate_rules(app_decl);
+        for (rule_vector::const_iterator it = src_rules.begin(); it != src_rules.end(); ++it) {
+            rule *r = *it;
             unsigned positive_tail_size = r->get_positive_tail_size();
             for (unsigned i = 0; i < positive_tail_size; ++i) {
-                func_decl* app_decl = app->get_decl();
-                if (app && r->get_head() && r->get_decl() == app_decl && r->get_decl(i) == app_decl) {
+                if (r->get_decl(i) == app_decl) {
                     return true;
                 }
             }
-            ++current_rule;
         }
         return false;
         // return true;
@@ -934,13 +955,11 @@ namespace datalog {
         return new_rule;
     }
 
-    bool mk_synchronize::merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred, unsigned current_lemma) {
+    bool mk_synchronize::merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred) {
         m_stratifier = alloc(reachability_stratifier, *m_graph);
-        if (!m_stratifier->validate_mutual_recursion()) {
-            return false;
-        }
-        // m_stratifier->display(std::cout);
+
         reachability_stratifier::comp_vector const & strata = m_stratifier->get_strats();
+
         lemma * source_lemma = mine_lemma_from_rule(r, apps);
 
         std::cout << "--------------------------------\n";
@@ -952,6 +971,7 @@ namespace datalog {
         vector< vector<unsigned> > merged;
         unsigned n = apps.size();
         merged.resize(n);
+
         for (unsigned j = 0; j < n; ++j) {
             for (unsigned i = strata.size(); i > 0; --i) {
                 reachability_stratifier::item_set & stratum = *strata[i-1];
@@ -960,41 +980,38 @@ namespace datalog {
                 }
             }
         }
+
+        vector<unsigned> query_stratum;
+        for (unsigned i = strata.size(); i > 0; --i) {
+            reachability_stratifier::item_set & stratum = *strata[i-1];
+            if (stratum.contains(&r)) {
+                for (unsigned j = 0; j < n; ++j) {
+                    query_stratum.push_back(i-1);
+                }
+                break;
+            }
+        }
+
         vector2lemma_map strata2lemmas;
+        strata2lemmas.insert(query_stratum, source_lemma);
+
         vector<unsigned> stratum_buf;
         stratum_buf.resize(n);
-        if (current_lemma != 1) {
-            compute_lemmas(0, merged, stratum_buf, *source_lemma, strata2lemmas, strata);
-            stratum_buf.reset(); stratum_buf.resize(n);
-            bool empty = true;
-            for (vector2lemma_map::iterator it = strata2lemmas.begin(); it != strata2lemmas.end(); ++it) {
-                if (!((it->m_value)->is_empty())) {
-                    empty = false;
-                    break;
-                }
+        compute_lemmas(0, merged, stratum_buf, *source_lemma, strata2lemmas, strata);
+        stratum_buf.reset(); stratum_buf.resize(n);
+        bool empty = true;
+        strata2lemmas.remove(query_stratum);
+        for (vector2lemma_map::iterator it = strata2lemmas.begin(); it != strata2lemmas.end(); ++it) {
+            if (!((it->m_value)->is_empty())) {
+                empty = false;
+                break;
             }
-            if(!empty) {
-                merge(0, merged, stratum_buf, strata2lemmas, all_rules, pred, strata);
-                return true;
-            }
-            return false;
         }
-        std::cout << "BAD LEMMA" << std::endl;
-        merge(0, merged, stratum_buf, strata2lemmas, all_rules, pred, strata);
-        return true;
-        // stratum_buf.reset(); stratum_buf.resize(n);
-        // // bool empty = true;
-        // // for (vector2lemma_map::iterator it = strata2lemmas.begin(); it != strata2lemmas.end(); ++it) {
-        // //     if (!((it->m_value)->is_empty())) {
-        // //         empty = false;
-        // //         break;
-        // //     }
-        // // }
-        // // if(!empty) {
-        //     merge(0, merged, stratum_buf, strata2lemmas, all_rules, pred, strata);
-        //     return true;
-        // // }
-        // // return false;
+        if(!empty) {
+            merge(0, merged, stratum_buf, strata2lemmas, all_rules, pred, strata);
+            return true;
+        }
+        return false;
     }
 
     void mk_synchronize::compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum,
@@ -1014,11 +1031,14 @@ namespace datalog {
             }
 
             ptr_vector<lemma> source_lemmas;
-            source_lemmas.push_back(&source_lemma);
+
             if (!strata2lemmas.empty()) {
+                std::cout << "not empty" << std::endl;
                 for (vector2lemma_map::iterator it = strata2lemmas.begin(); it != strata2lemmas.end(); ++it) {
                     bool connected = true;
+                    (it->m_value)->display(std::cout);
                     for (unsigned i = stratum_buf.size(); i > 0; --i) {
+                        std::cout << (it->m_key)[i-1] << std::endl;
                         if (!m_stratifier->strata_connected(*strata[(it->m_key)[i-1]], *strata[stratum_buf[i-1]])) {
                             connected = false;
                             break;
@@ -1136,11 +1156,10 @@ namespace datalog {
         }
     }
 
-    void mk_synchronize::merge_applications(rule & r, rule_set & rules, unsigned current_lemma) {
+    void mk_synchronize::merge_applications(rule & r, rule_set & rules) {
         ptr_vector<app> non_recursive_applications;
         for (unsigned i = 0; i < r.get_positive_tail_size(); ++i) {
             app* application = r.get_tail(i);
-            // TODO: filter out merging applications of non-recursive relations...
             if (!is_recursive_app(r, application) && exists_recursive(application, rules)) {
                 non_recursive_applications.push_back(application);
             }
@@ -1165,18 +1184,12 @@ namespace datalog {
         func_decl* product_pred = m_ctx.mk_fresh_head_predicate(symbol(buffer.c_str()),
             symbol::null, domain.size(), domain.c_ptr(), orig);
 
-        ptr_vector<func_decl> merged_decls;
         rule_vector rules_buf;
         unsigned n = non_recursive_applications.size();
-        merged_decls.resize(n);
         rules_buf.resize(n);
-        for (unsigned i = 0; i < n; ++i) {
-            merged_decls[i] = non_recursive_applications[i]->get_decl();
-        }
 
-        // vector<rule_vector> renamed_rules = rename_bound_vars(merged_decls, rules);
         app * replacing_app;
-        if (merge_if_needed(r, non_recursive_applications, rules, product_pred, current_lemma)) {
+        if (merge_if_needed(r, non_recursive_applications, rules, product_pred)) {
             printf("MERGE\n");
             r.display(m_ctx, std::cout);
             std::cout << std::endl;
@@ -1233,12 +1246,10 @@ namespace datalog {
 
         unsigned current_rule = 0;
 
-        unsigned current_lemma = 0;
         while (current_rule < rules->get_num_rules()) {
             rule *r = rules->get_rule(current_rule);
-            merge_applications(*r, *rules, current_lemma);
+            merge_applications(*r, *rules);
             ++current_rule;
-            ++current_lemma;
         }
 
         // printf("\n-----------------DEPENDENCIES GRAPH-----------------\n");

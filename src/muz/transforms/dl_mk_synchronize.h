@@ -35,6 +35,9 @@ namespace datalog {
     class rule_reachability_graph : public rule_dependencies_base<rule> {
         rule_set const & m_rules;
         rule_unifier     m_unify;
+        ast_manager&    m;
+        smt_params  m_smt_params;
+        smt::kernel m_solver;
 
         virtual void populate_one(rule * r);
         bool check_reachability(rule & src, unsigned tail_idx, rule & dst, rule_ref & tmp);
@@ -134,14 +137,14 @@ namespace datalog {
         app* product_application(ptr_vector<app> const & apps, func_decl * pred);
         rule_ref product_rule(rule_vector const & rules, func_decl * pred);
 
-        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred, unsigned current_lemma);
+        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred);
         void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum, vector<unsigned> & stratum_buf,
         lemma & source_lemma, vector2lemma_map & strata2lemmas,
         reachability_stratifier::comp_vector const & strata);
         void merge_rules(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
          rule_set & all_rules, func_decl * pred, lemma & source_lemma, unsigned & var_idx,
          reachability_stratifier::comp_vector const & strata);
-        void merge_applications(rule & r, rule_set & rules, unsigned current_lemma);
+        void merge_applications(rule & r, rule_set & rules);
         void tautologically_extend(rule_set & rules, ptr_vector<func_decl> const & decls);
         void merge(unsigned idx, vector< vector<unsigned> > const & merged_stratum,
             vector<unsigned> & stratum_buf, vector2lemma_map & strata2lemmas,
