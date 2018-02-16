@@ -68,29 +68,14 @@ namespace datalog {
     class lemma {
         ast_manager & m;
         ptr_vector<expr> m_constraint;
-        vector< ptr_vector<expr> > m_holes;
-        vector< svector<bool> > m_hole_enabled;
-
-        void replace_bound_vars_in_this(bool with_consts, unsigned & delta, ptr_vector<expr> & new_constraint,
-            vector< ptr_vector<expr> > & new_holes, ptr_vector<sort> & var_sorts, svector<symbol> & var_names);
-        void fill_holes(bool replace_with_consts, vector< ptr_vector<expr> > exprs, unsigned & delta,
-            ptr_vector<expr> & result, ptr_vector<sort> & var_sorts, svector<symbol> & var_names);
-        void helper(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
-        expr_ref_vector & result, vector<ptr_vector<expr> > & head_implicants, vector<ptr_vector<expr> > & call_implicants,
-        unsigned & delta, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names,
-        reachability_stratifier::comp_vector const & strata);
+        ptr_vector<expr> m_holes;
 
     public:
-        lemma(ast_manager & m, ptr_vector<expr> const & constraint, vector< ptr_vector<expr> > const & holes);
-        lemma(ast_manager & m, ptr_vector<lemma> const & combined_lemmas);
-        lemma(ast_manager & m, lemma & source, ptr_vector<expr> const & old_assumption_vars, obj_hashtable<expr> const & new_assumption_vars);
-
-        expr_ref_vector operator()(vector<unsigned> const & merged_stratum, ptr_vector<expr> & assumption_vars,
-            ptr_vector<expr> & conclusions, ptr_vector<sort> & free_var_sorts, svector<symbol> & free_var_names,
-            reachability_stratifier::comp_vector const & strata);
+        lemma(ast_manager & m, ptr_vector<expr> const & constraint, ptr_vector<expr> const & holes);
 
         rule_ref enrich_rule(rule & r, vector<unsigned> const & num_rules, rule_set & all_rules);
-
+        app * get_head_from_holes(func_decl * pred);
+        ptr_vector<app> get_tail_from_holes();
         void display( std::ostream & out );
 
         bool is_empty();
@@ -128,22 +113,23 @@ namespace datalog {
         rule_ref replace_applications(rule & r, ptr_vector<app> & apps, func_decl * pred, app *& resulting_app);
 
         lemma * mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) const;
-        obj_hashtable<expr> extract_invariant(expr_ref_vector const & constraint, ptr_vector<expr> const & assumption_vars,
-                ptr_vector<expr> const & conclusions, ptr_vector<sort> const & free_var_sorts, svector<symbol> const & free_var_names);
-        void disable_minimal_unsatisfiable_subset(expr_ref_vector const & set, model_ref const & model, svector<bool> & enabled);
         void update_reachability_graph(func_decl * new_rel, ptr_vector<app> const & apps, rule * old_rule, rule * new_rule, rule_set & rules);
         void update_reachability_graph(func_decl * new_rel, rule_set & rules);
 
         app* product_application(ptr_vector<app> const & apps, func_decl * pred);
         rule_ref product_rule(rule_vector const & rules, func_decl * pred);
-
-        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, func_decl * pred);
-        void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum, vector<unsigned> & stratum_buf,
-        lemma & source_lemma, vector2lemma_map & strata2lemmas,
-        reachability_stratifier::comp_vector const & strata);
+        rule_ref product_lemma_rule(rule_vector const & rules, func_decl * rho);
+        void add_rules_for_lemma(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
+            func_decl * rho, unsigned & var_idx,
+            reachability_stratifier::comp_vector const & strata);
+        bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, 
+            func_decl * pred, func_decl * rho);
+        void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum, 
+            vector<unsigned> & stratum_buf, vector2lemma_map & strata2lemmas,
+            reachability_stratifier::comp_vector const & strata, func_decl * rho);
         void merge_rules(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
-         rule_set & all_rules, func_decl * pred, lemma & source_lemma, unsigned & var_idx,
-         reachability_stratifier::comp_vector const & strata);
+            rule_set & all_rules, func_decl * pred, lemma & source_lemma, unsigned & var_idx,
+            reachability_stratifier::comp_vector const & strata);
         void merge_applications(rule & r, rule_set & rules);
         void tautologically_extend(rule_set & rules, ptr_vector<func_decl> const & decls);
         void merge(unsigned idx, vector< vector<unsigned> > const & merged_stratum,
