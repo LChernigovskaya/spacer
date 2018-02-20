@@ -123,10 +123,10 @@ namespace datalog {
             func_decl * rho, unsigned & var_idx,
             reachability_stratifier::comp_vector const & strata);
         bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, 
-            func_decl * pred, func_decl * rho);
+            func_decl * pred);
         void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum, 
             vector<unsigned> & stratum_buf, vector2lemma_map & strata2lemmas,
-            reachability_stratifier::comp_vector const & strata, func_decl * rho);
+            reachability_stratifier::comp_vector const & strata, ptr_vector<sort> domain, vector<unsigned> num_args);
         void merge_rules(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
             rule_set & all_rules, func_decl * pred, lemma & source_lemma, unsigned & var_idx,
             reachability_stratifier::comp_vector const & strata);
