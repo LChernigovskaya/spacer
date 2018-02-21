@@ -113,15 +113,20 @@ namespace datalog {
         rule_ref replace_applications(rule & r, ptr_vector<app> & apps, func_decl * pred, app *& resulting_app);
 
         lemma * mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) const;
+        lemma * mine_lemma_from_model(model_ref model, func_decl * rho) const;
         void update_reachability_graph(func_decl * new_rel, ptr_vector<app> const & apps, rule * old_rule, rule * new_rule, rule_set & rules);
         void update_reachability_graph(func_decl * new_rel, rule_set & rules);
 
         app* product_application(ptr_vector<app> const & apps, func_decl * pred);
         rule_ref product_rule(rule_vector const & rules, func_decl * pred);
-        rule_ref product_lemma_rule(rule_vector const & rules, func_decl * rho);
+        void product_lemma_rule(rule_vector const & rules, func_decl * rho);
+        void add_with_recursive_calls(unsigned idx, vector< vector<ptr_vector<expr> > > const & args,
+            vector<ptr_vector<expr> > & args_buf, func_decl * rho, ptr_vector<app> tail, svector<bool> tail_neg);
         void add_rules_for_lemma(unsigned idx, rule_vector &buf, vector<unsigned> const & merged_rules,
             func_decl * rho, unsigned & var_idx,
             reachability_stratifier::comp_vector const & strata);
+        app * add_fail_rules(reachability_stratifier::comp_vector const & strata,
+            vector<unsigned> const & merged_rules, func_decl * rho, vector<unsigned> num_args);
         bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, 
             func_decl * pred);
         void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum, 
