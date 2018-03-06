@@ -113,7 +113,7 @@ namespace datalog {
         rule_ref replace_applications(rule & r, ptr_vector<app> & apps, func_decl * pred, app *& resulting_app);
 
         lemma * mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) const;
-        lemma * mine_lemma_from_model(model_ref model, func_decl * rho) const;
+        lemma * mine_lemma_from_model(expr_ref const & modelr, func_decl * rho) const;
         void update_reachability_graph(func_decl * new_rel, ptr_vector<app> const & apps, rule * old_rule, rule * new_rule, rule_set & rules);
         void update_reachability_graph(func_decl * new_rel, rule_set & rules);
 
@@ -126,7 +126,7 @@ namespace datalog {
             func_decl * rho, unsigned & var_idx,
             reachability_stratifier::comp_vector const & strata);
         app * add_fail_rules(reachability_stratifier::comp_vector const & strata,
-            vector<unsigned> const & merged_rules, func_decl * rho, vector<unsigned> num_args);
+            vector<unsigned> const & merged_rules, func_decl * rho, vector<unsigned> num_args, bool has_non_rec);
         bool merge_if_needed(rule & r, ptr_vector<app> & apps, rule_set & all_rules, 
             func_decl * pred);
         void compute_lemmas(unsigned idx, vector< vector<unsigned> > const & merged_stratum, 

@@ -810,8 +810,6 @@ namespace datalog {
     }
 
     void rule_manager::substitute(rule_ref& r, unsigned sz, expr*const* es) {
-        std::cout << "SUBSTITUTE RULE" << std::endl;
-        r->display(m_ctx, std::cout);
         expr_ref tmp(m);
         app_ref  new_head(m);
         app_ref_vector new_tail(m);
@@ -819,14 +817,12 @@ namespace datalog {
         var_subst vs(m, false);
         vs(r->get_head(), sz, es, tmp);
         new_head = to_app(tmp);
-        for (unsigned i = 0; i < r->get_tail_size(); ++i) {
+        for (unsigned i = 0; i < r->get_tail_size(); ++i) {            
             vs(r->get_tail(i), sz, es, tmp);
             new_tail.push_back(to_app(tmp));
             tail_neg.push_back(r->is_neg_tail(i));
         }
         r = mk(new_head.get(), new_tail.size(), new_tail.c_ptr(), tail_neg.c_ptr(), r->name(), false);
-        std::cout << "END SUBSTITUTE RULE" << std::endl;
-        r->display(m_ctx, std::cout);
         // keep old variable indices around so we can compose with substitutions. 
         // r->norm_vars(*this);
     }

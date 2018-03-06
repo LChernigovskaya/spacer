@@ -21,6 +21,7 @@ Revision History:
 #include "ast_util.h"
 #include "expr_safe_replace.h"
 #include"fixedpoint_params.hpp"
+#include "dl_mk_unfold.h"
 
 namespace datalog {
 
@@ -419,8 +420,6 @@ namespace datalog {
     }
 
     rule * mk_synchronize::rename_bound_vars_in_rule(rule * r, unsigned & var_idx) {
-        std::cout << "RENAME" << std::endl;
-        m_ctx.display_rules(std::cout);
         ptr_vector<sort> sorts;
         r->get_vars(m, sorts);
         expr_ref_vector revsub(m);
@@ -433,17 +432,9 @@ namespace datalog {
 
         rule_ref new_rule(rm);
         new_rule = rm.mk(r, r->name());
-        std::cout << "NEW RULE" << std::endl;
-        m_ctx.display_rules(std::cout);
-        std::cout << "new rule" << std::endl;
-        new_rule->display(m_ctx, std::cout);
         rm.substitute(new_rule, revsub.size(), revsub.c_ptr());
-        std::cout << "SUBSTITUTE" << std::endl;
-        m_ctx.display_rules(std::cout);
 
         rule * result = new_rule.steal();
-        std::cout << "STEAL" << std::endl;
-        m_ctx.display_rules(std::cout);
         m_rule2orig.insert(result, r);
         return result;
     }
@@ -480,21 +471,22 @@ namespace datalog {
         return alloc(lemma, m, conjuncts, holes);
     }
 
-    lemma * mk_synchronize::mine_lemma_from_model(model_ref model, func_decl * rho) const {
-        expr_ref modelr(m);
-        model->eval(rho, modelr);
+    lemma * mk_synchronize::mine_lemma_from_model(expr_ref const & modelr, func_decl * rho) const {
+        expr_ref_vector result(m);
+        result.push_back(modelr);
         ptr_vector<expr> conjuncts;
         ptr_vector<expr> holes;
-        std::cout << m.is_and(modelr) << std::endl;
-        
-        if (m.is_and(modelr)) {
-            app* a = to_app(modelr);
-            for (unsigned i = 0; i < a->get_num_args(); ++i) {
-                conjuncts.push_back((expr_ref(a->get_arg(i), m)));
-            }
+        flatten_and(result);
+        expr_array r;
+
+        for (expr_ref_vector::iterator it = result.begin(); it != result.end(); ++it) {
+            // conjuncts.push_back(*it);
+            m.push_back(r, *it);
         }
-        else {
-            conjuncts.push_back(modelr);
+        expr_array s;
+        m.copy(r, s);
+        for (unsigned i = 0; i < m.size(s); ++i) {
+            conjuncts.push_back(m.get(s, i));
         }
         holes.resize(rho->get_arity());
         for (unsigned i = 0; i < rho->get_arity(); ++i) {
@@ -725,10 +717,18 @@ namespace datalog {
             domain.append(decl->get_arity(), decl->get_domain());
         }
 
+        params_ref _p = m_ctx.get_params().p;
+        _p.set_bool("datalog.synchronization", false);
+        bool tail_simplifier_pve = _p.get_bool("xform.tail_simplifier_pve", true);
+        _p.set_bool("xform.tail_simplifier_pve", false);
+        m_ctx.updt_params(_p);
         vector<unsigned> stratum_buf;
         stratum_buf.resize(n);
         compute_lemmas(0, merged, stratum_buf, strata2lemmas, strata, domain, num_args);
         std::cout << "out from compute" << std::endl;
+        _p.set_bool("datalog.synchronization", true);
+        _p.set_bool("xform.tail_simplifier_pve", tail_simplifier_pve);
+        m_ctx.updt_params(_p);
         stratum_buf.reset(); stratum_buf.resize(n);
         bool empty = true;
         strata2lemmas.remove(query_stratum);
@@ -751,10 +751,13 @@ namespace datalog {
         if (idx >= merged_stratum.size()) {
 
             bool recursive = false;
+            bool has_non_rec = false;
             for (unsigned i = stratum_buf.size(); i > 0; --i) {
                 if (!m_stratifier->is_non_recursive_stratum(*strata[stratum_buf[i-1]])) {
                     recursive = true;
-                    break;
+                }
+                else {
+                    has_non_rec = true;
                 }
             }
             if (!recursive) {
@@ -790,37 +793,35 @@ namespace datalog {
                 // new_rule.get()->display(m_ctx, std::cout);
                 m_ctx.add_rule(new_rule);
             }
-            m_ctx.display_rules(std::cout);
             rule_vector rules_buf;
             rules_buf.resize(merged_stratum.size());
             unsigned var_idx = 0;
             add_rules_for_lemma(0, rules_buf, stratum_buf, rho, var_idx, strata);
-            app * fail = add_fail_rules(strata, stratum_buf, rho, num_args);
 
-            params_ref _p = m_ctx.get_params().p;
-            _p.set_bool("datalog.synchronization", false);
-            bool tail_simplifier_pve = _p.get_bool("xform.tail_simplifier_pve", true);
-            _p.set_bool("xform.tail_simplifier_pve", false);
-            m_ctx.updt_params(_p);
-            std::cout << "display" << std::endl;
+            app * fail = add_fail_rules(strata, stratum_buf, rho, num_args, has_non_rec);
+
             m_ctx.display_rules(std::cout);
             std::cout << "QUERY" << std::endl;
-            std::cout << m_ctx.query(fail) << std::endl;
-            std::cout << "MODEL" << std::endl;
-            model_ref model = m_ctx.get_model();
-            std::cout << "model" << std::endl;
-            lemma * new_lemma = mine_lemma_from_model(model, rho);
-            std::cout << "--------------------------------\n";
-            std::cout << "b. for stratum ";
-            std::cout << "got\n";
-            new_lemma->display(std::cout);
-            std::cout << "--------------------------------\n";
+            std::cout << mk_pp(fail, m) << std::endl;
+            if (m_ctx.query(fail) == l_false) {
+                std::cout << "MODEL" << std::endl;
+                model_ref model = m_ctx.get_model();
+                std::cout << "model" << std::endl;
+                expr_ref modelr(m);
+                model->eval(rho, modelr);
+                lemma * new_lemma = mine_lemma_from_model(modelr, rho);
+                std::cout << "--------------------------------\n";
+                std::cout << "b. for stratum ";
+                std::cout << "got\n";
+                new_lemma->display(std::cout);
+                std::cout << "--------------------------------\n";
 
-            strata2lemmas.insert(stratum_buf, new_lemma);
+                strata2lemmas.insert(stratum_buf, new_lemma);
+            }
+            else {
+                std::cout << mk_pp(m_ctx.get_answer_as_formula(), m) << std::endl;
+            }
 
-            _p.set_bool("datalog.synchronization", true);
-            _p.set_bool("xform.tail_simplifier_pve", tail_simplifier_pve);
-            m_ctx.updt_params(_p);
             return;
         }
 
@@ -832,7 +833,7 @@ namespace datalog {
     }
 
     app * mk_synchronize::add_fail_rules(reachability_stratifier::comp_vector const & strata,
-            vector<unsigned> const & merged_rules, func_decl * rho, vector<unsigned> num_args) {
+            vector<unsigned> const & merged_rules, func_decl * rho, vector<unsigned> num_args, bool has_non_rec) {
         ptr_vector<sort> domain;
         ptr_vector<expr> fail_args;
         func_decl* fail = m_ctx.mk_fresh_head_predicate(symbol("__fail"),
@@ -840,11 +841,9 @@ namespace datalog {
         app * head = m.mk_app(fail, fail_args.size(), fail_args.c_ptr());
 
         for (unsigned ind = 0; ind < merged_rules.size(); ++ind) {
-            std::cout << ind << std::endl;
             reachability_stratifier::item_set & src = *strata[merged_rules[ind]];
             for (obj_hashtable<rule>::iterator it = src.begin(); it != src.end(); ++it) {
                 rule* r = *it;
-                // r->display(m_ctx, std::cout);
                 ptr_vector<sort> sorts;
                 r->get_vars(m, sorts);
                 unsigned delta = sorts.size();
@@ -857,6 +856,15 @@ namespace datalog {
                     if (is_recursive_app(*r, tail)) {
                         recursive = true;
                         ptr_vector<expr> args;
+                        if (has_non_rec) {
+                            mk_unfold * m_unfold  = alloc(mk_unfold, m_ctx);
+                            rule_set* dst = alloc(rule_set, m_ctx);
+                            m_unfold->expand_tail(*r, j, m_ctx.get_rules(), *dst);
+                            rule_set::iterator it = dst->begin(), end = dst->end();
+                            for (; it != end; ++it) {
+                                (*it)->display(m_ctx, std::cout);
+                            }
+                        }
                         for (unsigned k = 0; k < tail->get_num_args(); ++k) {
                             args.push_back(tail->get_arg(k));
                         }
@@ -869,10 +877,8 @@ namespace datalog {
                     buffer << "_";
                     buffer << ind;
                     buffer << "_";
-                    std::cout << rec_args.size() << std::endl;
                     unsigned n = rec_args.size();
                     for (unsigned j = 0; j < n; ++j) {
-                        std::cout << j << std::endl;
                         buffer << j;
                         ptr_vector<app> new_tail;
                         svector<bool> new_tail_neg;
@@ -926,24 +932,15 @@ namespace datalog {
                         buffer << "__fail";
                         rule_ref new_rule(rm);
                         new_rule = rm.mk(head, new_tail.size(), new_tail.c_ptr(), new_tail_neg.c_ptr(), symbol(buffer.c_str()), false);
-                        // new_rule.get()->display(m_ctx, std::cout);
                         m_ctx.add_rule(new_rule);
-                        m_ctx.display_rules(std::cout);
                     }
                 }
-                else {
-                    std::cout << "non recursive" << std::endl;
-                }
             }
-            std::cout << ind << std::endl;
         }
-        std::cout << "head" << std::endl;
         return head;
     }
 
     void mk_synchronize::product_lemma_rule(rule_vector const & rules, func_decl * rho) {
-        std::cout << "PRODUCT LEMMA RULE" << std::endl;
-        m_ctx.display_rules(std::cout);
         unsigned n = rules.size();
         ptr_vector<app> new_tail;
         svector<bool> new_tail_neg;
@@ -1023,15 +1020,11 @@ namespace datalog {
             for (unsigned i = 0; i < args_buf.size(); ++i) {
                 args_head.append(args_buf[i]);
             }
-            std::cout << (rho->get_arity() == args_head.size()) << std::endl;
             app * head = m.mk_app(rho, args_head.size(), args_head.c_ptr());
             rule_ref new_rule(rm);
             new_rule = rm.mk(head, tail.size(), tail.c_ptr(), tail_neg.c_ptr());
             // new_rule.get()->display(m_ctx, std::cout);
-            std::cout << "OLOLO" << std::endl;
-            m_ctx.display_rules(std::cout);
             m_ctx.add_rule(new_rule);
-            m_ctx.display_rules(std::cout);
             return;
         }
 
@@ -1046,19 +1039,11 @@ namespace datalog {
          func_decl * rho, unsigned & var_idx,
          reachability_stratifier::comp_vector const & strata) {
         if (idx >= merged_rules.size()) {
-            std::cout << "ADD RULES FOR LEMMA" << std::endl;
-            m_ctx.display_rules(std::cout);
             rule_vector renamed_rules;
             renamed_rules.resize(buf.size());
             for (unsigned i = 0; i < buf.size(); ++i) {
-                buf[i]->display(m_ctx, std::cout);
                 renamed_rules[i] = rename_bound_vars_in_rule(buf[i], var_idx);
-                std::cout << "OLOLO " << i << std::endl;
-
-                m_ctx.display_rules(std::cout);
             }
-            std::cout << "RENAME BOUND VARS" << std::endl;
-            m_ctx.display_rules(std::cout);
             product_lemma_rule(renamed_rules, rho);
             
             // m_ctx.add_rule(product);
