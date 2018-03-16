@@ -711,7 +711,7 @@ namespace datalog {
         }
         vector2lemma_map strata2lemmas;
         strata2lemmas.insert(query_stratum, source_lemma);
-        compute_lemmas(first_stratum, second_stratum, strata2lemmas, strata, pred);
+        compute_lemmas(first_stratum, second_stratum, strata2lemmas, strata, pred, all_rules);
         std::cout << "out from compute" << std::endl;
         bool empty = true;
         strata2lemmas.remove(query_stratum);
@@ -730,7 +730,7 @@ namespace datalog {
 
     void mk_synchronize::compute_lemmas(vector<unsigned> const & first_stratum,
             vector<unsigned> const & second_stratum, vector2lemma_map & strata2lemmas,
-            reachability_stratifier::comp_vector const & strata, func_decl * pred) {
+            reachability_stratifier::comp_vector const & strata, func_decl * pred, rule_set & all_rules) {
         unsigned num_stratum = first_stratum.size() * second_stratum.size();
         for (unsigned i = 0; i < first_stratum.size(); ++i) {
             for (unsigned j = 0; j < second_stratum.size(); ++j) {
@@ -774,7 +774,7 @@ namespace datalog {
                     }
 
                     unsigned var_idx = 0;
-                    add_rules_for_lemma(first_rules, second_rules, rho, var_idx);
+                    add_rules_for_lemma(first_rules, second_rules, rho, var_idx, all_rules);
                     ptr_vector<sort> domain;
                     ptr_vector<expr> fail_args;
                     func_decl* fail = m_ctx.mk_fresh_head_predicate(symbol("__fail"),
@@ -845,7 +845,13 @@ namespace datalog {
                     _p.set_uint("timeout", cur_timeout / (num_stratum + 1));
                     m_ctx.updt_params(_p);
                     m_ctx.get_fparams().updt_local_params(_p);
+                    std::cout << "--------before query------" << std::endl;
+                    m_ctx.display_rules(std::cout);
+                    std::cout << "--------------------------" << std::endl;
                     lbool result = m_ctx.query(head);
+                    std::cout << "--------after query------" << std::endl;
+                    m_ctx.display_rules(std::cout);
+                    std::cout << "--------------------------" << std::endl;
                     std::cout << result << std::endl;
                     if (result == l_false) {
                         model_ref model = m_ctx.get_model();
@@ -864,6 +870,9 @@ namespace datalog {
 
                             strata2lemmas.insert(merged_stratum, new_lemma);
                         }
+                    }
+                    if (result == l_true) {
+                        std::cout << mk_pp(m_ctx.get_answer_as_formula(), m) << std::endl;
                     }
                     // m_ctx.display_rules(std::cout);
                     rule_vector rules_for_lemma = m_ctx.get_rules().get_predicate_rules(fail);
@@ -886,14 +895,14 @@ namespace datalog {
     }
 
     void mk_synchronize::add_rules_for_lemma(obj_hashtable<rule> const & first_rules,
-         obj_hashtable<rule> const & second_rules, func_decl * rho, unsigned & var_idx) {
+         obj_hashtable<rule> const & second_rules, func_decl * rho, unsigned & var_idx, rule_set & all_rules) {
         for (obj_hashtable<rule>::iterator it = first_rules.begin(); it != first_rules.end(); ++it) {
             for (obj_hashtable<rule>::iterator it1 = second_rules.begin(); it1 != second_rules.end(); ++it1) {
                 rule_vector renamed_rules;
                 renamed_rules.resize(2);
                 renamed_rules[0] = rename_bound_vars_in_rule(*it, var_idx);
                 renamed_rules[1] = rename_bound_vars_in_rule(*it1, var_idx);
-                product_lemma_rule(renamed_rules, rho);
+                product_lemma_rule(renamed_rules, rho, all_rules);
             }
         }
     }
@@ -922,13 +931,13 @@ namespace datalog {
             ptr_vector<app> new_tail;
             svector<bool> new_tail_neg;
 
-            for (unsigned i = 0; i < r->get_positive_tail_size(); ++i) {
-                app* tail = r->get_tail(i);
-                if (!is_recursive_app(*r, tail)) {
-                    new_tail.push_back(tail);
-                    new_tail_neg.push_back(false);
-                }
-            }
+            // for (unsigned i = 0; i < r->get_positive_tail_size(); ++i) {
+            //     app* tail = r->get_tail(i);
+            //     if (!is_recursive_app(*r, tail)) {
+            //         new_tail.push_back(tail);
+            //         new_tail_neg.push_back(false);
+            //     }
+            // }
 
             ptr_vector<expr> args_rec;
             ptr_vector<expr> args_non_rec;
@@ -960,10 +969,10 @@ namespace datalog {
             new_tail.push_back(m.mk_app(rho, args_non_rec.size(), args_non_rec.c_ptr()));
             new_tail_neg.push_back(false);
 
-            for (unsigned i = r->get_positive_tail_size(); i < r->get_uninterpreted_tail_size(); ++i) {
-                new_tail.push_back(r->get_tail(i));
-                new_tail_neg.push_back(true);
-            }
+            // for (unsigned i = r->get_positive_tail_size(); i < r->get_uninterpreted_tail_size(); ++i) {
+            //     new_tail.push_back(r->get_tail(i));
+            //     new_tail_neg.push_back(true);
+            // }
             for (unsigned i = r->get_uninterpreted_tail_size(); i < r->get_tail_size(); ++i) {
                 new_tail.push_back(r->get_tail(i));
                 new_tail_neg.push_back(r->is_neg_tail(i));
@@ -1009,20 +1018,20 @@ namespace datalog {
             for (unsigned j = 0; j < n2; ++j) {
                 ptr_vector<app> new_tail;
                 svector<bool> new_tail_neg;
-                for (unsigned k = 0; k < first_rule->get_positive_tail_size(); ++k) {
-                    app* tail = first_rule->get_tail(k);
-                    if (!is_recursive_app(*first_rule, tail)) {
-                        new_tail.push_back(tail);
-                        new_tail_neg.push_back(false);
-                    }
-                }
-                for (unsigned k = 0; k < second_rule->get_positive_tail_size(); ++k) {
-                    app* tail = second_rule->get_tail(k);
-                    if (!is_recursive_app(*second_rule, tail)) {
-                        new_tail.push_back(tail);
-                        new_tail_neg.push_back(false);
-                    }
-                }
+                // for (unsigned k = 0; k < first_rule->get_positive_tail_size(); ++k) {
+                //     app* tail = first_rule->get_tail(k);
+                //     if (!is_recursive_app(*first_rule, tail)) {
+                //         new_tail.push_back(tail);
+                //         new_tail_neg.push_back(false);
+                //     }
+                // }
+                // for (unsigned k = 0; k < second_rule->get_positive_tail_size(); ++k) {
+                //     app* tail = second_rule->get_tail(k);
+                //     if (!is_recursive_app(*second_rule, tail)) {
+                //         new_tail.push_back(tail);
+                //         new_tail_neg.push_back(false);
+                //     }
+                // }
                 ptr_vector<expr> args_rec;
                 ptr_vector<expr> args_non_rec;
                 args_rec.resize(rho->get_arity());
@@ -1044,14 +1053,14 @@ namespace datalog {
 
                 new_tail.push_back(m.mk_app(rho, args_non_rec.size(), args_non_rec.c_ptr()));
                 new_tail_neg.push_back(false);
-                for (unsigned i = first_rule->get_positive_tail_size(); i < first_rule->get_uninterpreted_tail_size(); ++i) {
-                    new_tail.push_back(first_rule->get_tail(i));
-                    new_tail_neg.push_back(true);
-                }
-                for (unsigned i = second_rule->get_positive_tail_size(); i < second_rule->get_uninterpreted_tail_size(); ++i) {
-                    new_tail.push_back(second_rule->get_tail(i));
-                    new_tail_neg.push_back(true);
-                }
+                // for (unsigned i = first_rule->get_positive_tail_size(); i < first_rule->get_uninterpreted_tail_size(); ++i) {
+                //     new_tail.push_back(first_rule->get_tail(i));
+                //     new_tail_neg.push_back(true);
+                // }
+                // for (unsigned i = second_rule->get_positive_tail_size(); i < second_rule->get_uninterpreted_tail_size(); ++i) {
+                //     new_tail.push_back(second_rule->get_tail(i));
+                //     new_tail_neg.push_back(true);
+                // }
                 for (unsigned i = first_rule->get_uninterpreted_tail_size(); i < first_rule->get_tail_size(); ++i) {
                     new_tail.push_back(first_rule->get_tail(i));
                     new_tail_neg.push_back(first_rule->is_neg_tail(i));
@@ -1068,7 +1077,7 @@ namespace datalog {
         }
     }
 
-    void mk_synchronize::product_lemma_rule(rule_vector const & rules, func_decl * rho) {
+    void mk_synchronize::product_lemma_rule(rule_vector const & rules, func_decl * rho, rule_set & all_rules) {
         unsigned n = rules.size();
         ptr_vector<app> new_tail;
         svector<bool> new_tail_neg;
@@ -1095,11 +1104,11 @@ namespace datalog {
             rule& rule = *rules[j];
             for (unsigned i = 0; i < rule.get_positive_tail_size(); ++i) {
                 app* tail = rule.get_tail(i);
-                if (!is_recursive_app(rule, tail)) {
-                    new_tail.push_back(tail);
-                    new_tail_neg.push_back(false);
-                }
-                else {
+                // if (!is_recursive_app(rule, tail)) {
+                //     new_tail.push_back(tail);
+                //     new_tail_neg.push_back(false);
+                // }
+                if (is_recursive_app(rule, tail)) {
                     ptr_vector<expr> args;
                     for (unsigned k = 0; k < tail->get_num_args(); ++k) {
                         args.push_back(tail->get_arg(k));
@@ -1115,10 +1124,10 @@ namespace datalog {
                 head_args[j].push_back(args);
             }
 
-            for (unsigned i = rule.get_positive_tail_size(); i < rule.get_uninterpreted_tail_size(); ++i) {
-                new_tail.push_back(rule.get_tail(i));
-                new_tail_neg.push_back(true);
-            }
+            // for (unsigned i = rule.get_positive_tail_size(); i < rule.get_uninterpreted_tail_size(); ++i) {
+            //     new_tail.push_back(rule.get_tail(i));
+            //     new_tail_neg.push_back(true);
+            // }
             for (unsigned i = rule.get_uninterpreted_tail_size(); i < rule.get_tail_size(); ++i) {
                 new_tail.push_back(rule.get_tail(i));
                 new_tail_neg.push_back(rule.is_neg_tail(i));
@@ -1126,12 +1135,12 @@ namespace datalog {
         }
         vector<ptr_vector<expr> > args_buf;
         args_buf.resize(head_args.size());
-        add_with_recursive_calls(0, head_args, args_buf, rho, new_tail, new_tail_neg);
+        add_with_recursive_calls(0, head_args, args_buf, rho, new_tail, new_tail_neg, all_rules);
         return;
     }
 
     void mk_synchronize::add_with_recursive_calls(unsigned idx, vector< vector<ptr_vector<expr> > > const & args,
-            vector<ptr_vector<expr> > & args_buf, func_decl * rho, ptr_vector<app> tail, svector<bool> tail_neg) {
+            vector<ptr_vector<expr> > & args_buf, func_decl * rho, ptr_vector<app> tail, svector<bool> tail_neg, rule_set & all_rules) {
          if (idx >= args.size()) {
             ptr_vector<expr> args_head;
             for (unsigned i = 0; i < args_buf.size(); ++i) {
@@ -1141,15 +1150,28 @@ namespace datalog {
             rule_ref new_rule(rm);
             new_rule = rm.mk(head, tail.size(), tail.c_ptr(), tail_neg.c_ptr());
             new_rule->display(m_ctx, std::cout);
-            // for (unsigned i = 0; i < r.get_positive_tail_size(); ++i) {
-            //     app* application = r.get_tail(i);
-            //     if (!is_recursive_app(r, application) && exists_recursive(application, rules)) {
-            //         non_recursive_applications.push_back(application);
-            //     }
-            // }
-            // if (non_recursive_applications.size() >= 2) {
-            //     m_graph->connect(new_rule)
-            // }
+            ptr_vector<app> non_recursive_applications;
+            for (unsigned i = 0; i < new_rule->get_positive_tail_size(); ++i) {
+                app* application = new_rule->get_tail(i);
+                if (!is_recursive_app(*(new_rule.get()), application) && exists_recursive(application, all_rules)) {
+                    non_recursive_applications.push_back(application);
+                }
+            }
+            if (non_recursive_applications.size() >= 2) {
+                m_graph->display(std::cout);
+                rule_vector r;
+                r.push_back(new_rule);
+                m_graph->populate(1, r.c_ptr());
+                m_graph->display(std::cout);
+                all_rules.add_rule(new_rule);
+                std::cout << "---------with lemma------------" << std::endl;
+                all_rules.display(std::cout);
+                std::cout << "-----Merge in lemma-----------" << std::endl;
+                merge_applications(*(new_rule.get()), all_rules);
+                std::cout << "------------after merge--------" << std::endl;
+                all_rules.display(std::cout);
+
+            }
             m_ctx.add_rule(new_rule);
             return;
         }
@@ -1157,7 +1179,7 @@ namespace datalog {
         vector<ptr_vector<expr> > const & pred = args[idx];
         for (vector<ptr_vector<expr> >::const_iterator it = pred.begin(); it != pred.end(); ++it) {
             args_buf[idx] = *it;
-            add_with_recursive_calls(idx + 1, args, args_buf, rho, tail, tail_neg);
+            add_with_recursive_calls(idx + 1, args, args_buf, rho, tail, tail_neg, all_rules);
         }
     }
 
@@ -1251,7 +1273,7 @@ namespace datalog {
             app * replacing_app;
             if (merge_if_needed(*current_rule, merge_apps, rules, product_pred)) {
                 printf("MERGE\n");
-                rule_ref result = replace_applications(r, merge_apps, product_pred, replacing_app);
+                rule_ref result = replace_applications(*current_rule, merge_apps, product_pred, replacing_app);
                 update_reachability_graph(product_pred, rules);
                 update_reachability_graph(product_pred, merge_apps, current_rule, result.get(), rules);
                 rules.replace_rule(current_rule, result.get());

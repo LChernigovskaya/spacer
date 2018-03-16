@@ -124,11 +124,11 @@ namespace datalog {
 
         app* product_application(ptr_vector<app> const & apps, func_decl * pred);
         rule_ref product_rule(rule_vector const & rules, func_decl * pred);
-        void product_lemma_rule(rule_vector const & rules, func_decl * rho);
+        void product_lemma_rule(rule_vector const & rules, func_decl * rho, rule_set & all_rules);
         void add_with_recursive_calls(unsigned idx, vector< vector<ptr_vector<expr> > > const & args,
-            vector<ptr_vector<expr> > & args_buf, func_decl * rho, ptr_vector<app> tail, svector<bool> tail_neg);
+            vector<ptr_vector<expr> > & args_buf, func_decl * rho, ptr_vector<app> tail, svector<bool> tail_neg, rule_set & all_rules);
         void add_rules_for_lemma(obj_hashtable<rule> const & first_rules,
-         obj_hashtable<rule> const & second_rules, func_decl * rho, unsigned & var_idx);
+         obj_hashtable<rule> const & second_rules, func_decl * rho, unsigned & var_idx, rule_set & all_rules);
         void add_rec_fail(app * head, rule * r, func_decl * rho, func_decl * fail,
             vector<unsigned> num_args, unsigned rule_number);
         void add_non_rec_fail(app * head, rule * first_rule, rule * second_rule,
@@ -137,7 +137,7 @@ namespace datalog {
             func_decl * pred);
         void compute_lemmas(vector<unsigned> const & first_stratum,
             vector<unsigned> const & second_stratum, vector2lemma_map & strata2lemmas,
-            reachability_stratifier::comp_vector const & strata, func_decl * pred);
+            reachability_stratifier::comp_vector const & strata, func_decl * pred, rule_set & all_rules);
         void merge_rules(obj_hashtable<rule> first_rules, obj_hashtable<rule> second_rules,
          rule_set & all_rules, func_decl * pred, lemma & source_lemma, unsigned & var_idx,
          reachability_stratifier::comp_vector const & strata);
