@@ -21,6 +21,7 @@ Revision History:
 #include "ast_util.h"
 #include "expr_safe_replace.h"
 #include"fixedpoint_params.hpp"
+#include"model2expr.h"
 
 namespace datalog {
 
@@ -831,7 +832,6 @@ namespace datalog {
                     }
                     params_ref _p = m_ctx.get_params().p;
                     unsigned cur_timeout;
-                    std::cout << "ENGINE " << m_ctx.get_params().engine() << std::endl;
                     // if (_p.contains("timeout")) {
                     //     cur_timeout = _p.get_uint("timeout", 4294967295u);
                     // }
@@ -841,17 +841,11 @@ namespace datalog {
                     _p.set_bool("datalog.synchronization", false);
                     bool tail_simplifier_pve = m_ctx.get_params().xform_tail_simplifier_pve();
                     _p.set_bool("xform.tail_simplifier_pve", false);
-                    unsigned timeout = _p.get_uint("timeout", 600);
-                    _p.set_uint("timeout", cur_timeout / (num_stratum + 1));
+                    // unsigned timeout = _p.get_uint("timeout", 600);
+                    // _p.set_uint("timeout", cur_timeout / (num_stratum + 1));
+                    m_ctx.get_fparams().updt_params(_p);
                     m_ctx.updt_params(_p);
-                    m_ctx.get_fparams().updt_local_params(_p);
-                    std::cout << "--------before query------" << std::endl;
-                    m_ctx.display_rules(std::cout);
-                    std::cout << "--------------------------" << std::endl;
                     lbool result = m_ctx.query(head);
-                    std::cout << "--------after query------" << std::endl;
-                    m_ctx.display_rules(std::cout);
-                    std::cout << "--------------------------" << std::endl;
                     std::cout << result << std::endl;
                     if (result == l_false) {
                         model_ref model = m_ctx.get_model();
@@ -871,22 +865,15 @@ namespace datalog {
                             strata2lemmas.insert(merged_stratum, new_lemma);
                         }
                     }
-                    if (result == l_true) {
-                        std::cout << mk_pp(m_ctx.get_answer_as_formula(), m) << std::endl;
-                    }
-                    // m_ctx.display_rules(std::cout);
                     rule_vector rules_for_lemma = m_ctx.get_rules().get_predicate_rules(fail);
                     rules_for_lemma.append(m_ctx.get_rules().get_predicate_rules(rho));
                     for (rule_vector::iterator it = rules_for_lemma.begin(); it != rules_for_lemma.end(); ++it) {
                         m_ctx.get_rules().del_rule(*it);
                     }
                     m_ctx.query(m.mk_true());
-                    // std::cout << "----- DISPLAY RULES -----" << std::endl;
-                    // m_ctx.display_rules(std::cout);
-                    // std::cout << "--------------------------" << std::endl;
                     _p.set_bool("datalog.synchronization", true);
                     _p.set_bool("xform.tail_simplifier_pve", tail_simplifier_pve);
-                    _p.set_bool("timeout", timeout);
+                    // _p.set_bool("timeout", timeout);
                     m_ctx.updt_params(_p);
                     m_ctx.get_fparams().updt_local_params(_p);
                 }
@@ -931,13 +918,13 @@ namespace datalog {
             ptr_vector<app> new_tail;
             svector<bool> new_tail_neg;
 
-            // for (unsigned i = 0; i < r->get_positive_tail_size(); ++i) {
-            //     app* tail = r->get_tail(i);
-            //     if (!is_recursive_app(*r, tail)) {
-            //         new_tail.push_back(tail);
-            //         new_tail_neg.push_back(false);
-            //     }
-            // }
+            for (unsigned i = 0; i < r->get_positive_tail_size(); ++i) {
+                app* tail = r->get_tail(i);
+                if (!is_recursive_app(*r, tail)) {
+                    new_tail.push_back(tail);
+                    new_tail_neg.push_back(false);
+                }
+            }
 
             ptr_vector<expr> args_rec;
             ptr_vector<expr> args_non_rec;
@@ -969,10 +956,10 @@ namespace datalog {
             new_tail.push_back(m.mk_app(rho, args_non_rec.size(), args_non_rec.c_ptr()));
             new_tail_neg.push_back(false);
 
-            // for (unsigned i = r->get_positive_tail_size(); i < r->get_uninterpreted_tail_size(); ++i) {
-            //     new_tail.push_back(r->get_tail(i));
-            //     new_tail_neg.push_back(true);
-            // }
+            for (unsigned i = r->get_positive_tail_size(); i < r->get_uninterpreted_tail_size(); ++i) {
+                new_tail.push_back(r->get_tail(i));
+                new_tail_neg.push_back(true);
+            }
             for (unsigned i = r->get_uninterpreted_tail_size(); i < r->get_tail_size(); ++i) {
                 new_tail.push_back(r->get_tail(i));
                 new_tail_neg.push_back(r->is_neg_tail(i));
@@ -1018,20 +1005,20 @@ namespace datalog {
             for (unsigned j = 0; j < n2; ++j) {
                 ptr_vector<app> new_tail;
                 svector<bool> new_tail_neg;
-                // for (unsigned k = 0; k < first_rule->get_positive_tail_size(); ++k) {
-                //     app* tail = first_rule->get_tail(k);
-                //     if (!is_recursive_app(*first_rule, tail)) {
-                //         new_tail.push_back(tail);
-                //         new_tail_neg.push_back(false);
-                //     }
-                // }
-                // for (unsigned k = 0; k < second_rule->get_positive_tail_size(); ++k) {
-                //     app* tail = second_rule->get_tail(k);
-                //     if (!is_recursive_app(*second_rule, tail)) {
-                //         new_tail.push_back(tail);
-                //         new_tail_neg.push_back(false);
-                //     }
-                // }
+                for (unsigned k = 0; k < first_rule->get_positive_tail_size(); ++k) {
+                    app* tail = first_rule->get_tail(k);
+                    if (!is_recursive_app(*first_rule, tail)) {
+                        new_tail.push_back(tail);
+                        new_tail_neg.push_back(false);
+                    }
+                }
+                for (unsigned k = 0; k < second_rule->get_positive_tail_size(); ++k) {
+                    app* tail = second_rule->get_tail(k);
+                    if (!is_recursive_app(*second_rule, tail)) {
+                        new_tail.push_back(tail);
+                        new_tail_neg.push_back(false);
+                    }
+                }
                 ptr_vector<expr> args_rec;
                 ptr_vector<expr> args_non_rec;
                 args_rec.resize(rho->get_arity());
@@ -1053,14 +1040,14 @@ namespace datalog {
 
                 new_tail.push_back(m.mk_app(rho, args_non_rec.size(), args_non_rec.c_ptr()));
                 new_tail_neg.push_back(false);
-                // for (unsigned i = first_rule->get_positive_tail_size(); i < first_rule->get_uninterpreted_tail_size(); ++i) {
-                //     new_tail.push_back(first_rule->get_tail(i));
-                //     new_tail_neg.push_back(true);
-                // }
-                // for (unsigned i = second_rule->get_positive_tail_size(); i < second_rule->get_uninterpreted_tail_size(); ++i) {
-                //     new_tail.push_back(second_rule->get_tail(i));
-                //     new_tail_neg.push_back(true);
-                // }
+                for (unsigned i = first_rule->get_positive_tail_size(); i < first_rule->get_uninterpreted_tail_size(); ++i) {
+                    new_tail.push_back(first_rule->get_tail(i));
+                    new_tail_neg.push_back(true);
+                }
+                for (unsigned i = second_rule->get_positive_tail_size(); i < second_rule->get_uninterpreted_tail_size(); ++i) {
+                    new_tail.push_back(second_rule->get_tail(i));
+                    new_tail_neg.push_back(true);
+                }
                 for (unsigned i = first_rule->get_uninterpreted_tail_size(); i < first_rule->get_tail_size(); ++i) {
                     new_tail.push_back(first_rule->get_tail(i));
                     new_tail_neg.push_back(first_rule->is_neg_tail(i));
@@ -1104,10 +1091,10 @@ namespace datalog {
             rule& rule = *rules[j];
             for (unsigned i = 0; i < rule.get_positive_tail_size(); ++i) {
                 app* tail = rule.get_tail(i);
-                // if (!is_recursive_app(rule, tail)) {
-                //     new_tail.push_back(tail);
-                //     new_tail_neg.push_back(false);
-                // }
+                if (!is_recursive_app(rule, tail)) {
+                    new_tail.push_back(tail);
+                    new_tail_neg.push_back(false);
+                }
                 if (is_recursive_app(rule, tail)) {
                     ptr_vector<expr> args;
                     for (unsigned k = 0; k < tail->get_num_args(); ++k) {
@@ -1124,10 +1111,10 @@ namespace datalog {
                 head_args[j].push_back(args);
             }
 
-            // for (unsigned i = rule.get_positive_tail_size(); i < rule.get_uninterpreted_tail_size(); ++i) {
-            //     new_tail.push_back(rule.get_tail(i));
-            //     new_tail_neg.push_back(true);
-            // }
+            for (unsigned i = rule.get_positive_tail_size(); i < rule.get_uninterpreted_tail_size(); ++i) {
+                new_tail.push_back(rule.get_tail(i));
+                new_tail_neg.push_back(true);
+            }
             for (unsigned i = rule.get_uninterpreted_tail_size(); i < rule.get_tail_size(); ++i) {
                 new_tail.push_back(rule.get_tail(i));
                 new_tail_neg.push_back(rule.is_neg_tail(i));
@@ -1150,28 +1137,28 @@ namespace datalog {
             rule_ref new_rule(rm);
             new_rule = rm.mk(head, tail.size(), tail.c_ptr(), tail_neg.c_ptr());
             new_rule->display(m_ctx, std::cout);
-            ptr_vector<app> non_recursive_applications;
-            for (unsigned i = 0; i < new_rule->get_positive_tail_size(); ++i) {
-                app* application = new_rule->get_tail(i);
-                if (!is_recursive_app(*(new_rule.get()), application) && exists_recursive(application, all_rules)) {
-                    non_recursive_applications.push_back(application);
-                }
-            }
-            if (non_recursive_applications.size() >= 2) {
-                m_graph->display(std::cout);
-                rule_vector r;
-                r.push_back(new_rule);
-                m_graph->populate(1, r.c_ptr());
-                m_graph->display(std::cout);
-                all_rules.add_rule(new_rule);
-                std::cout << "---------with lemma------------" << std::endl;
-                all_rules.display(std::cout);
-                std::cout << "-----Merge in lemma-----------" << std::endl;
-                merge_applications(*(new_rule.get()), all_rules);
-                std::cout << "------------after merge--------" << std::endl;
-                all_rules.display(std::cout);
+            // ptr_vector<app> non_recursive_applications;
+            // for (unsigned i = 0; i < new_rule->get_positive_tail_size(); ++i) {
+            //     app* application = new_rule->get_tail(i);
+            //     if (!is_recursive_app(*(new_rule.get()), application) && exists_recursive(application, all_rules)) {
+            //         non_recursive_applications.push_back(application);
+            //     }
+            // }
+            // if (non_recursive_applications.size() >= 2) {
+            //     m_graph->display(std::cout);
+            //     rule_vector r;
+            //     r.push_back(new_rule);
+            //     m_graph->populate(1, r.c_ptr());
+            //     m_graph->display(std::cout);
+            //     all_rules.add_rule(new_rule);
+            //     std::cout << "---------with lemma------------" << std::endl;
+            //     all_rules.display(std::cout);
+            //     std::cout << "-----Merge in lemma-----------" << std::endl;
+            //     merge_applications(*(new_rule.get()), all_rules);
+            //     std::cout << "------------after merge--------" << std::endl;
+            //     all_rules.display(std::cout);
 
-            }
+            // }
             m_ctx.add_rule(new_rule);
             return;
         }
@@ -1325,7 +1312,9 @@ namespace datalog {
 
         m_graph = alloc(rule_reachability_graph, m_ctx, *rules);
 
-        // ptr_vector<func_decl> decls;
+        func_decl_set query_rules = m_ctx.get_rules().get_output_predicates();
+        m_ctx.get_rules().reset_output_predicates();
+                // ptr_vector<func_decl> decls;
         // for (rule_set::decl2rules::iterator it = rules->begin_grouped_rules(); it != rules->end_grouped_rules(); ++it) {
         //     decls.push_back(it->m_key);
         // }
@@ -1339,6 +1328,9 @@ namespace datalog {
             ++current_rule;
         }
 
+        for (func_decl_set::iterator it = query_rules.begin(); it != query_rules.end(); ++it) {
+            m_ctx.set_output_predicate(*it);
+        }
         // printf("\n-----------------DEPENDENCIES GRAPH-----------------\n");
         // m_stratifier = alloc(reachability_stratifier, *m_graph);
         // m_stratifier->display(std::cout);

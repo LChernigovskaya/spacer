@@ -132,6 +132,7 @@ namespace datalog {
         bool is_output_predicate(func_decl * pred) const { return m_output_preds.contains(pred); }
         const func_decl_set & get_output_predicates() const { return m_output_preds; }
         func_decl* get_output_predicate() const { SASSERT(m_output_preds.size() == 1); return *m_output_preds.begin(); }
+        void reset_output_predicates() { m_output_preds.reset(); }
 
 
         void display(std::ostream & out) const;

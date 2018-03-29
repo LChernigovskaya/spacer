@@ -94,7 +94,6 @@ lbool dl_interface::query(expr * query) {
     func_decl_ref            query_pred(m);
     rm.mk_query(query, rules0);
     expr_ref bg_assertion = m_ctx.get_background_assertion();
-
     check_reset();
 
     TRACE("pdr",
@@ -106,8 +105,6 @@ lbool dl_interface::query(expr * query) {
           tout << "rules:\n";
           m_ctx.display_rules(tout);
           );
-
-
     apply_default_transformation(m_ctx);
 
     if (m_ctx.get_params().xform_slice()) {
@@ -148,7 +145,6 @@ lbool dl_interface::query(expr * query) {
     }
 
     query_pred = rules.get_output_predicate();
-
     IF_VERBOSE(2, m_ctx.display_rules(verbose_stream()););
     m_pdr_rules.replace_rules(rules);
     m_pdr_rules.close();
