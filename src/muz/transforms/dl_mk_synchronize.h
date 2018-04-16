@@ -69,6 +69,7 @@ namespace datalog {
         ast_manager & m;
         ptr_vector<expr> m_constraint;
         ptr_vector<expr> m_holes;
+        arith_util      m_autil;
 
         void replace_bound_vars_in_this(bool with_consts, unsigned & delta, ptr_vector<expr> & new_constraint,
                 ptr_vector<expr> & new_holes, ptr_vector<sort> & var_sorts, svector<symbol> & var_names);

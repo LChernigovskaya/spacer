@@ -273,7 +273,8 @@ namespace datalog {
     lemma::lemma(ast_manager & m, ptr_vector<expr> const & constraint, ptr_vector<expr> const & holes)
           : m(m),
             m_constraint(constraint),
-            m_holes(holes)
+            m_holes(holes),
+            m_autil(m)
     {}
 
     app * lemma::get_head_from_holes(func_decl * pred) {
@@ -282,8 +283,19 @@ namespace datalog {
 
     ptr_vector<app> lemma::get_tail_from_holes() {
         ptr_vector<app> new_tail;
+        ptr_vector<expr> equals;
         for (ptr_vector<expr>::const_iterator it = m_constraint.begin(); it != m_constraint.end(); ++it) {
+            if (m.is_eq(*it)) {
+                equals.push_back(*it);
+            }
             new_tail.push_back(to_app(*it));
+        }
+        for (unsigned i = 0; i < equals.size(); ++i) {
+            for (unsigned j = i + 1; j < equals.size(); ++j) {
+                new_tail.push_back(m.mk_eq
+                    (m_autil.mk_sub((to_app(equals[i]))->get_arg(0), (to_app(equals[j]))->get_arg(0)),
+                    m_autil.mk_sub((to_app(equals[i]))->get_arg(1), (to_app(equals[j]))->get_arg(1))));
+            }
         }
         return new_tail;
     }
