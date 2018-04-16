@@ -1,0 +1,15 @@
+(declare-var n Int)
+(declare-var m Int)
+(declare-var n1 Int)
+(declare-var m1 Int)
+(declare-var r Int)
+(declare-var r1 Int)
+(declare-rel fail ())
+(declare-rel ack (Int Int Int))
+
+(rule (=> (<= m 0) (ack m n (+ n 1))))
+(rule (=> (and (> m 0) (<= n 0) (ack (- m 1) 1 r)) (ack m n r)))
+(rule (=> (and (> m 0) (> n 0) (ack m (- n 1) r1) (ack (- m 1) r1 r)) (ack m n r)))
+(rule (=> (and (< n n1) (= m m1) (ack n m r) (ack n1 m1 r1) (> r r1)) fail))
+
+(query fail)
