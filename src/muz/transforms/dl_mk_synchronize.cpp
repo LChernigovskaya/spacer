@@ -574,6 +574,7 @@ namespace datalog {
                     assumptions.push_back(assumption);
                     assumptions2idx.insert(assumption, i);
                     solver.assert_expr(m.mk_implies(assumption, valuation));
+                    std::cout << mk_pp(m.mk_implies(assumption, valuation), m) << std::endl;
                 }
             }
         }
@@ -696,7 +697,8 @@ namespace datalog {
         m_ctx(ctx),
         m(ctx.get_manager()),
         rm(ctx.get_rule_manager()),
-        m_algorithm(new remove_conjuncts_algorithm(m))
+        m_algorithm(new remove_conjuncts_algorithm(m)),
+        m_autil(m)
     {}
 
     bool mk_synchronize::is_recursive_app(rule & r, app * app) const {
@@ -800,12 +802,24 @@ namespace datalog {
         return result;
     }
 
-    lemma * mk_synchronize::mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) const {
+    lemma * mk_synchronize::mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) {
         ptr_vector<expr> conjuncts;
         vector< ptr_vector<expr> > holes;
+        ptr_vector<expr> equals;
         conjuncts.resize(r.get_tail_size() - r.get_uninterpreted_tail_size());
         for (unsigned i = r.get_tail_size(), j = 0; i > r.get_uninterpreted_tail_size(); --i, ++j) {
-            conjuncts[j] = r.get_tail(i-1);
+            app * conj = r.get_tail(i-1);
+            conjuncts[j] = conj;
+            if (m.is_eq(conj)) {
+                equals.push_back(conj);
+            }
+        }
+        for (unsigned i = 0; i < equals.size(); ++i) {
+            for (unsigned j = i + 1; j < equals.size(); ++j) {
+                conjuncts.push_back(m.mk_eq
+                    (m_autil.mk_sub((to_app(equals[i]))->get_arg(0), (to_app(equals[j]))->get_arg(0)),
+                    m_autil.mk_sub((to_app(equals[i]))->get_arg(1), (to_app(equals[j]))->get_arg(1))));
+            }
         }
         for (ptr_vector<app>::const_iterator it = apps.begin(); it != apps.end(); ++it) {
             holes.push_back(ptr_vector<expr>((*it)->get_num_args(), (*it)->get_args()));
@@ -1067,6 +1081,7 @@ namespace datalog {
                 }
             }
             if (recursive) {
+                std::cout << "recursive" << std::endl;
                 compute_lemmas_in_stratum(stratum_buf, rules2lemmas, strata, r, all_rules);
             }
             return;
@@ -1082,14 +1097,11 @@ namespace datalog {
     void mk_synchronize::compute_lemmas_in_stratum(vector<unsigned> & stratum_buf, rules2lemma_map & rules2lemmas,
             reachability_stratifier::comp_vector const & strata, rule & r, rule_set & all_rules) {
         std::queue<rule_vector> rules_queue;
-        rule_reachability_graph::item_set const & deps = m_graph->get_deps(&r);
         unsigned n = stratum_buf.size();
         vector<rule_reachability_graph::item_set> merged; merged.resize(n);
         for (unsigned i = 0; i < n; ++i) {
             for (rule_reachability_graph::item_set::iterator it = strata[stratum_buf[i]]->begin(); it != strata[stratum_buf[i]]->end(); ++it) {
-                if (deps.contains(*it)) {
-                    merged[i].insert(*it);
-                }
+                merged[i].insert(*it);
             }
         }
         vector<rule_vector> queue;
@@ -1145,8 +1157,8 @@ namespace datalog {
             }
             lemma *source_lemma = alloc(lemma, m, source_lemmas);
 
-            // std::cout << "source lemma" << std::endl;
-            // source_lemma->display(std::cout);
+            std::cout << "source lemma" << std::endl;
+            source_lemma->display(std::cout);
 
             lemma * resulting_lemma = m_algorithm->compute_lemma(source_lemma, current_rules);
             if (!(rules2lemmas.contains(current_rules)) || !(*resulting_lemma == *rules2lemmas[current_rules])) {
@@ -1155,8 +1167,8 @@ namespace datalog {
                     rules_queue.push(*it);
                 }
             }
-            // std::cout << "resulting lemma" << std::endl;
-            // resulting_lemma->display(std::cout);
+            std::cout << "resulting lemma" << std::endl;
+            resulting_lemma->display(std::cout);
         }
     }
 
@@ -1320,6 +1332,7 @@ namespace datalog {
         }
 
         m_graph = alloc(rule_reachability_graph, m_ctx, *rules);
+        m_graph->display(std::cout);
 
         // ptr_vector<func_decl> decls;
         // for (rule_set::decl2rules::iterator it = rules->begin_grouped_rules(); it != rules->end_grouped_rules(); ++it) {
@@ -1345,9 +1358,9 @@ namespace datalog {
 
         printf("OUT OF MERGING\n");
 
-        // printf("\n\n-----------------RESULTING RULES:-----------------\n");
-        // rules->display(std::cout);
-        // printf("\n\n----------------------------------\n");
+        printf("\n\n-----------------RESULTING RULES:-----------------\n");
+        rules->display(std::cout);
+        printf("\n\n----------------------------------\n");
         return rules;
     }
 

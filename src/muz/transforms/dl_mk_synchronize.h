@@ -29,6 +29,7 @@ Revision History:
 #include"dl_rule_dependencies.h"
 #include"dl_mk_rule_inliner.h"
 #include"smt_kernel.h"
+#include"arith_decl_plugin.h"
 
 namespace datalog {
 
@@ -126,6 +127,7 @@ namespace datalog {
         obj_map<rule, rule_vector*> m_prod2orig;
         std::map<symbol, lemma*> cache;
         lemma_computing_algorithm *m_algorithm;
+        arith_util      m_autil;
 
         bool is_recursive_app(rule & r, app * app) const;
         bool exists_recursive(app * app, rule_set & rules) const;
@@ -135,7 +137,7 @@ namespace datalog {
         vector<rule_vector> rename_bound_vars(ptr_vector<func_decl> const & heads, rule_set & rules);
         rule_ref replace_applications(rule & r, ptr_vector<app> & apps, func_decl * pred, app *& resulting_app);
 
-        lemma * mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) const;
+        lemma * mine_lemma_from_rule(rule & r, ptr_vector<app> & apps);
 
         void update_reachability_graph(func_decl * new_rel, ptr_vector<app> const & apps, rule * old_rule, rule * new_rule, rule_set & rules);
         void update_reachability_graph(func_decl * new_rel, rule_set & rules);
