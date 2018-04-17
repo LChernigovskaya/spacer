@@ -258,7 +258,7 @@ namespace datalog {
     }
 
     rule_set * mk_mutual_recursion_eliminator::operator()(rule_set const & source) {
-		printf("\n\n----------------------------------\nMUTUAL RECURSION!\n");
+		// printf("\n\n----------------------------------\nMUTUAL RECURSION!\n");
 		// printf("\n\n----------------------------------\nMUTUAL RECURSION! SOURCE RULES:\n");
 		// source.display(std::cout);
 
@@ -271,7 +271,7 @@ namespace datalog {
         }
 
         merge_mutual_recursion(*rules);
-        printf("\n\n-----------------OUT OF MUTUAL:-----------------\n");
+        // printf("\n\n-----------------OUT OF MUTUAL:-----------------\n");
 
         // printf("\n\n-----------------RESULTING RULES:-----------------\n");
         // rules->display(std::cout);

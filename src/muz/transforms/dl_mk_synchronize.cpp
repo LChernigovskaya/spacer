@@ -574,7 +574,7 @@ namespace datalog {
                     assumptions.push_back(assumption);
                     assumptions2idx.insert(assumption, i);
                     solver.assert_expr(m.mk_implies(assumption, valuation));
-                    std::cout << mk_pp(m.mk_implies(assumption, valuation), m) << std::endl;
+                    // std::cout << mk_pp(m.mk_implies(assumption, valuation), m) << std::endl;
                 }
             }
         }
@@ -956,16 +956,28 @@ namespace datalog {
         new_tail_neg.resize(product_tail_length);
         unsigned tail_idx = -1;
         if (has_recursion) {
-            // TODO: there may be more than one recursive call!
-            ptr_vector<app> unique_recursive_calls;
-            unique_recursive_calls.resize(n);
+            int max_size = recursive_calls[0].size();
             for (unsigned i = 0; i < n; ++i) {
-                unique_recursive_calls[i] = recursive_calls[i][0];
+                if (recursive_calls[i].size() > max_size) {
+                    max_size = recursive_calls[i].size();
+                }
             }
-
-            ++tail_idx;
-            new_tail[tail_idx] = product_application(unique_recursive_calls, pred);
-            new_tail_neg[tail_idx] = false;
+            for (unsigned j = 0; j < max_size; ++j) {
+                ptr_vector<app> merged_recursive_calls;
+                merged_recursive_calls.resize(n);
+                for (unsigned i = 0; i < n; ++i) {
+                    unsigned cur_size = recursive_calls[i].size();
+                    if (j < cur_size) {
+                        merged_recursive_calls[i] = recursive_calls[i][j];
+                    }
+                    else {
+                        merged_recursive_calls[i] = recursive_calls[i][cur_size - 1];
+                    }
+                }
+                ++tail_idx;
+                new_tail[tail_idx] = product_application(merged_recursive_calls, pred);
+                new_tail_neg[tail_idx] = false;
+            }
         }
 
         for (rule_vector::const_iterator it = rules.begin(); it != rules.end(); ++it) {
@@ -1026,8 +1038,8 @@ namespace datalog {
 
         std::cout << "Created fresh relation symbol " << name << std::endl;
         if (cache.find(name) != cache.end() && *cache[name] == *source_lemma) {
-            std::cout << "equal" << std::endl;
-            cache[name]->display(std::cout);
+            // std::cout << "equal" << std::endl;
+            // cache[name]->display(std::cout);
             return true;
         }
         cache.insert(std::pair<symbol,lemma*>(name, source_lemma));
@@ -1081,7 +1093,7 @@ namespace datalog {
                 }
             }
             if (recursive) {
-                std::cout << "recursive" << std::endl;
+                // std::cout << "recursive" << std::endl;
                 compute_lemmas_in_stratum(stratum_buf, rules2lemmas, strata, r, all_rules);
             }
             return;
@@ -1157,8 +1169,8 @@ namespace datalog {
             }
             lemma *source_lemma = alloc(lemma, m, source_lemmas);
 
-            std::cout << "source lemma" << std::endl;
-            source_lemma->display(std::cout);
+            // std::cout << "source lemma" << std::endl;
+            // source_lemma->display(std::cout);
 
             lemma * resulting_lemma = m_algorithm->compute_lemma(source_lemma, current_rules);
             if (!(rules2lemmas.contains(current_rules)) || !(*resulting_lemma == *rules2lemmas[current_rules])) {
@@ -1167,8 +1179,8 @@ namespace datalog {
                     rules_queue.push(*it);
                 }
             }
-            std::cout << "resulting lemma" << std::endl;
-            resulting_lemma->display(std::cout);
+            // std::cout << "resulting lemma" << std::endl;
+            // resulting_lemma->display(std::cout);
         }
     }
 
@@ -1319,9 +1331,9 @@ namespace datalog {
     }
 
     rule_set * mk_synchronize::operator()(rule_set const & source) {
-        printf("\n\n----------------------------------\nSYNCHRONIZING! \n");
+        // printf("\n\n----------------------------------\nSYNCHRONIZING! \n");
         // printf("\n\n----------------------------------\nSYNCHRONIZING! SOURCE RULES:\n");
-        source.display(std::cout);
+        // source.display(std::cout);
 
         rule_set* rules = alloc(rule_set, m_ctx);
         rules->inherit_predicates(source);
@@ -1332,7 +1344,7 @@ namespace datalog {
         }
 
         m_graph = alloc(rule_reachability_graph, m_ctx, *rules);
-        m_graph->display(std::cout);
+        // m_graph->display(std::cout);
 
         // ptr_vector<func_decl> decls;
         // for (rule_set::decl2rules::iterator it = rules->begin_grouped_rules(); it != rules->end_grouped_rules(); ++it) {
@@ -1356,11 +1368,11 @@ namespace datalog {
         // }
         // printf("\n------------------------------------------------------------\n");
 
-        printf("OUT OF MERGING\n");
+        // printf("OUT OF MERGING\n");
 
-        printf("\n\n-----------------RESULTING RULES:-----------------\n");
-        rules->display(std::cout);
-        printf("\n\n----------------------------------\n");
+        // printf("\n\n-----------------RESULTING RULES:-----------------\n");
+        // rules->display(std::cout);
+        // printf("\n\n----------------------------------\n");
         return rules;
     }
 
