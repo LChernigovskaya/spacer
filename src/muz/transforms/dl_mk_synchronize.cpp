@@ -315,7 +315,8 @@ namespace datalog {
                 bool in_every_lemma = first_lemma->m_hole_enabled[i][j];
                 if (in_every_lemma) {
                     for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
-                        if (!(*it)->m_hole_enabled[i][j]) {
+                        if (i >= (*it)->m_hole_enabled.size() || j >= (*it)->m_hole_enabled[i].size() ||
+                             !(*it)->m_hole_enabled[i][j]) {
                             in_every_lemma = false;
                             break;
                         }
@@ -583,6 +584,7 @@ namespace datalog {
         // std::cout << "RESULT IS " << lresult << "; GOT UNSAT CORE OF SIZE " << solver.get_unsat_core_size() << std::endl;
         for (unsigned i = 0; i < solver.get_unsat_core_size(); ++i) {
             expr * core_assumption = solver.get_unsat_core_expr(i);
+            // std::cout << mk_pp(core_assumption, m) << std::endl;
             SASSERT(assumptions2idx.contains(core_assumption));
             enabled[assumptions2idx[core_assumption]] = false;
         }
@@ -1162,8 +1164,6 @@ namespace datalog {
             ptr_vector<lemma> source_lemmas;
             for (vector<rule_vector>::iterator it = incoming_vertices.begin(); it != incoming_vertices.end(); ++it) {
                 if (rules2lemmas.contains(*it)) {
-                    // std::cout << "lemmas" << std::endl;
-                    // rules2lemmas[*it]->display(std::cout);
                     source_lemmas.push_back(rules2lemmas[*it]);
                 }
             }
