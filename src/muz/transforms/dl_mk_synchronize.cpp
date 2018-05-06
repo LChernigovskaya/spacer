@@ -315,7 +315,8 @@ namespace datalog {
                 bool in_every_lemma = first_lemma->m_hole_enabled[i][j];
                 if (in_every_lemma) {
                     for (ptr_vector<lemma>::const_iterator it = begin; it != end; ++it) {
-                        if (!(*it)->m_hole_enabled[i][j]) {
+                        if (i >= (*it)->m_hole_enabled.size() || j >= (*it)->m_hole_enabled[i].size() ||
+                             !(*it)->m_hole_enabled[i][j]) {
                             in_every_lemma = false;
                             break;
                         }
@@ -583,6 +584,7 @@ namespace datalog {
         // std::cout << "RESULT IS " << lresult << "; GOT UNSAT CORE OF SIZE " << solver.get_unsat_core_size() << std::endl;
         for (unsigned i = 0; i < solver.get_unsat_core_size(); ++i) {
             expr * core_assumption = solver.get_unsat_core_expr(i);
+            // std::cout << mk_pp(core_assumption, m) << std::endl;
             SASSERT(assumptions2idx.contains(core_assumption));
             enabled[assumptions2idx[core_assumption]] = false;
         }
@@ -805,22 +807,22 @@ namespace datalog {
     lemma * mk_synchronize::mine_lemma_from_rule(rule & r, ptr_vector<app> & apps) {
         ptr_vector<expr> conjuncts;
         vector< ptr_vector<expr> > holes;
-        ptr_vector<expr> equals;
+        // ptr_vector<expr> equals;
         conjuncts.resize(r.get_tail_size() - r.get_uninterpreted_tail_size());
         for (unsigned i = r.get_tail_size(), j = 0; i > r.get_uninterpreted_tail_size(); --i, ++j) {
             app * conj = r.get_tail(i-1);
             conjuncts[j] = conj;
-            if (m.is_eq(conj)) {
-                equals.push_back(conj);
-            }
+            // if (m.is_eq(conj)) {
+            //     equals.push_back(conj);
+            // }
         }
-        for (unsigned i = 0; i < equals.size(); ++i) {
-            for (unsigned j = i + 1; j < equals.size(); ++j) {
-                conjuncts.push_back(m.mk_eq
-                    (m_autil.mk_sub((to_app(equals[i]))->get_arg(0), (to_app(equals[j]))->get_arg(0)),
-                    m_autil.mk_sub((to_app(equals[i]))->get_arg(1), (to_app(equals[j]))->get_arg(1))));
-            }
-        }
+        // for (unsigned i = 0; i < equals.size(); ++i) {
+        //     for (unsigned j = i + 1; j < equals.size(); ++j) {
+        //         conjuncts.push_back(m.mk_eq
+        //             (m_autil.mk_sub((to_app(equals[i]))->get_arg(0), (to_app(equals[j]))->get_arg(0)),
+        //             m_autil.mk_sub((to_app(equals[i]))->get_arg(1), (to_app(equals[j]))->get_arg(1))));
+        //     }
+        // }
         for (ptr_vector<app>::const_iterator it = apps.begin(); it != apps.end(); ++it) {
             holes.push_back(ptr_vector<expr>((*it)->get_num_args(), (*it)->get_args()));
         }
@@ -1162,8 +1164,6 @@ namespace datalog {
             ptr_vector<lemma> source_lemmas;
             for (vector<rule_vector>::iterator it = incoming_vertices.begin(); it != incoming_vertices.end(); ++it) {
                 if (rules2lemmas.contains(*it)) {
-                    // std::cout << "lemmas" << std::endl;
-                    // rules2lemmas[*it]->display(std::cout);
                     source_lemmas.push_back(rules2lemmas[*it]);
                 }
             }
@@ -1368,7 +1368,7 @@ namespace datalog {
         // }
         // printf("\n------------------------------------------------------------\n");
 
-        // printf("OUT OF MERGING\n");
+        printf("OUT OF MERGING\n");
 
         // printf("\n\n-----------------RESULTING RULES:-----------------\n");
         // rules->display(std::cout);
