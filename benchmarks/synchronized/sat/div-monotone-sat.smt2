@@ -10,6 +10,6 @@
 
 (rule (=> (< x y) (d x y 0)))
 (rule (=> (and (>= x y) (d (- x y) y r)) (d x y (+ r 1))))
-(rule (=> (and (> y 0) (> a 0) (d a y r) (d (+ a y) y r1) (not (= r1 (+ 1 r)))) fail))
+(rule (=> (and (> y 0) (> x 0) (> x y) (> a 0) (d a x r) (d a y r1) (<= r r1)) fail))
 
 (query fail :print-certificate true)
