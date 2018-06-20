@@ -35,8 +35,17 @@ namespace datalog {
         context&        m_ctx;
         ast_manager&    m;
         rule_manager&   rm;
+        map<symbol, func_decl*, symbol_hash_proc, symbol_eq_proc> cache;
+
+        struct app_compare {
+            bool operator()(app* a, app* b) const {
+                return a->get_decl()->get_name() > b->get_decl()->get_name();
+            }
+        };
 
         bool is_recursive_app(rule & r, app * app) const;
+        bool exists_recursive(app * app, rule_set & rules) const;
+
         void replace_applications(rule & r, rule_set & rules, ptr_vector<app> & apps, func_decl * pred);
 
         rule * rename_bound_vars_in_rule(rule * r, unsigned & var_idx);
