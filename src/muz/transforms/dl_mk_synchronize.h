@@ -35,6 +35,9 @@ namespace datalog {
         context&        m_ctx;
         ast_manager&    m;
         rule_manager&   rm;
+
+        scoped_ptr<rule_dependencies> m_deps;
+        scoped_ptr<rule_stratifier> m_stratifier;
         map<symbol, func_decl*, symbol_hash_proc, symbol_eq_proc> cache;
 
         struct app_compare {
@@ -44,18 +47,22 @@ namespace datalog {
         };
 
         bool is_recursive_app(rule & r, app * app) const;
-        bool exists_recursive(app * app, rule_set & rules) const;
+        bool exists_recursive(app * app) const;
 
-        void replace_applications(rule & r, rule_set & rules, ptr_vector<app> & apps, func_decl * pred);
+        ptr_vector<rule_stratifier::item_set> add_merged_decls(ptr_vector<app> apps);
+        void add_new_rel_symbol (unsigned idx, ptr_vector<rule_stratifier::item_set> const & decls,
+            ptr_vector<func_decl> & buf, bool & was_added);
+
+        void replace_applications(rule & r, rule_set & rules, ptr_vector<app> & apps);
 
         rule * rename_bound_vars_in_rule(rule * r, unsigned & var_idx);
-        vector<rule_vector> rename_bound_vars(ptr_vector<func_decl> const & heads, rule_set & rules);
+        vector<rule_vector> rename_bound_vars(ptr_vector<rule_stratifier::item_set> const & heads, rule_set & rules);
 
-        app* product_application(ptr_vector<app> const & apps, func_decl * pred);
-        rule_ref product_rule(rule_vector const & rules, func_decl * pred);
+        app* product_application(ptr_vector<app> const & apps);
+        rule_ref product_rule(rule_vector const & rules);
 
-        void merge_rules(unsigned idx, ptr_vector<func_decl> const & decls, rule_vector &buf,
-            vector<rule_vector> const & merged_rules, rule_set & all_rules, func_decl * pred);
+        void merge_rules(unsigned idx, rule_vector & buf,
+            vector<rule_vector> const & merged_rules, rule_set & all_rules);
         void merge_applications(rule & r, rule_set & rules);
 
     public:
