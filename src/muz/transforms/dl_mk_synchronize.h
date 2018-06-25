@@ -10,6 +10,25 @@ Abstract:
     Rule transformer that attempts to merge recursive iterations
     relaxing the shape of the inductive invariant.
 
+Example:
+
+    Q(z)  :- A(x), B(y), phi1(x,y,z).
+    A(x)  :- A(x'), phi2(x,x').
+    A(x)  :- phi3(x).
+    B(y)  :- C(y'), phi4(y,y').
+    C(y)  :- B(y'), phi5(y,y').
+    B(y)  :- phi6(y).
+
+    Transformed clauses:
+
+    Q(z)    :- AB(x,y), phi1(x,y,z).
+    AB(x,y) :- AC(x',y'), phi2(x,x'), phi4(y,y').
+    AC(x,y) :- AB(x',y'), phi2(x,x'), phi5(y,y').
+    AB(x,y) :- AC(x, y'), phi3(x), phi4(y,y').
+    AC(x,y) :- AB(x, y'), phi3(x), phi5(y,y').
+    AB(x,y) :- AB(x',y), phi2(x,x'), phi6(y).
+    AB(x,y) :- phi3(x), phi6(y).
+
 Author:
 
     Dmitry Mordvinov (dvvrd) 2017-05-24
@@ -50,7 +69,7 @@ namespace datalog {
         bool exists_recursive(app * app) const;
 
         ptr_vector<rule_stratifier::item_set> add_merged_decls(ptr_vector<app> apps);
-        void add_new_rel_symbol (unsigned idx, ptr_vector<rule_stratifier::item_set> const & decls,
+        void add_new_rel_symbols(unsigned idx, ptr_vector<rule_stratifier::item_set> const & decls,
             ptr_vector<func_decl> & buf, bool & was_added);
 
         void replace_applications(rule & r, rule_set & rules, ptr_vector<app> & apps);

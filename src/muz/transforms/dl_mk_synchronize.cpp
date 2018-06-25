@@ -77,12 +77,12 @@ namespace datalog {
         return merged_decls;
     }
 
-    void mk_synchronize::add_new_rel_symbol (unsigned idx, ptr_vector<rule_stratifier::item_set> const & decls,
-            ptr_vector<func_decl> & buf, bool & was_added) {
+    void mk_synchronize::add_new_rel_symbols(unsigned idx, ptr_vector<rule_stratifier::item_set> const & decls,
+            ptr_vector<func_decl> & decls_buf, bool & was_added) {
         if (idx >= decls.size()) {
             string_buffer<> buffer;
             ptr_vector<sort> domain;
-            ptr_vector<func_decl>::const_iterator it = buf.begin(), end = buf.end();
+            ptr_vector<func_decl>::const_iterator it = decls_buf.begin(), end = decls_buf.end();
             for (; it != end; ++it) {
                 buffer << (*it)->get_name();
                 buffer << "!!";
@@ -93,7 +93,7 @@ namespace datalog {
 
             if (!cache.contains(new_name)) {
                 was_added = true;
-                func_decl* orig = buf[0];
+                func_decl* orig = decls_buf[0];
                 func_decl* product_pred = m_ctx.mk_fresh_head_predicate(new_name,
                     symbol::null, domain.size(), domain.c_ptr(), orig);
                 cache.insert(new_name, product_pred);
@@ -104,7 +104,7 @@ namespace datalog {
         rule_stratifier::item_set const & pred_decls = (*decls[idx]);
         for (rule_stratifier::item_set::iterator it = pred_decls.begin(); it != pred_decls.end(); ++it) {
             buf[idx] = *it;
-            add_new_rel_symbol(idx + 1, decls, buf, was_added);
+            add_new_rel_symbols(idx + 1, decls, decls_buf, was_added);
         }
     }
 
@@ -120,7 +120,6 @@ namespace datalog {
         new_tail[0] = replacing;
         new_tail_neg[0] = false;
 
-        // TODO: unify with product_application
         for (unsigned i = 0; i < r.get_positive_tail_size(); ++i) {
             app* tail = r.get_tail(i);
             if (!apps.contains(tail)) {
@@ -338,10 +337,10 @@ namespace datalog {
         ptr_vector<rule_stratifier::item_set> merged_decls = add_merged_decls(non_recursive_applications);
 
         unsigned n = non_recursive_applications.size();
-        ptr_vector<func_decl> buf;
-        buf.resize(n);
+        ptr_vector<func_decl> decls_buf;
+        decls_buf.resize(n);
         bool was_added = false;
-        add_new_rel_symbol(0, merged_decls, buf, was_added);
+        add_new_rel_symbols(0, merged_decls, decls_buf, was_added);
         if (was_added){
             rule_vector rules_buf;
             rules_buf.resize(n);
