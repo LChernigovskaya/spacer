@@ -1,0 +1,17 @@
+(declare-rel f0 (Int Int Int))
+(declare-rel fail ())
+(declare-var x Int)
+(declare-var i Int)
+(declare-var j Int)
+(declare-var x0 Int)
+(declare-var y0 Int)
+(declare-var x1 Int)
+(declare-var y1 Int)
+(declare-var m0 Int)
+(declare-var m1 Int)
+
+(rule (=> (<= j 0) (f0 i j 0)))
+(rule (=> (and (> j 0) (f0 i (- j 1) x)) (f0 i j (+ x i))))
+(rule (=> (and (>= x0 0) (>= x1 x0) (>= y1 y0) (f0 x0 y0 m0) (f0 x1 y1 m1) (> m0 m1)) fail))
+
+(query fail :print-certificate true)
