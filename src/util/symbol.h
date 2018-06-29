@@ -78,8 +78,6 @@ public:
         return s1.str() == s2;
     }
     friend bool operator!=(symbol const & s1, char const * s2) { return !operator==(s1, s2); }
-    friend bool operator<(symbol const & s1, symbol const & s2) { return s1.m_data < s2.m_data; }
-    friend bool operator>(symbol const & s1, symbol const & s2) { return s1.m_data > s2.m_data; }
     void const * c_ptr() const { return m_data; }
     // Low level function.
     // It is the inverse of c_ptr().

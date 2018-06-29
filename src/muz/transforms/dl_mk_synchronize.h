@@ -1,5 +1,5 @@
 /*++
-Copyright (c) 2017 Saint-Petersburg State University
+Copyright (c) 2017-2018 Saint-Petersburg State University
 
 Module Name:
 
@@ -32,6 +32,7 @@ Example:
 Author:
 
     Dmitry Mordvinov (dvvrd) 2017-05-24
+    Lidiia Chernigovskaia (LChernigovskaya) 2017-10-20
 
 Revision History:
 
@@ -59,29 +60,28 @@ namespace datalog {
         scoped_ptr<rule_stratifier> m_stratifier;
         map<symbol, func_decl*, symbol_hash_proc, symbol_eq_proc> cache;
 
-        struct app_compare {
-            bool operator()(app* a, app* b) const {
-                return a->get_decl()->get_name() > b->get_decl()->get_name();
-            }
-        };
-
         bool is_recursive_app(rule & r, app * app) const;
-        bool exists_recursive(app * app) const;
+        bool has_recursive_premise(app * app) const;
 
-        ptr_vector<rule_stratifier::item_set> add_merged_decls(ptr_vector<app> apps);
+        ptr_vector<rule_stratifier::item_set> add_merged_decls(ptr_vector<app> & apps);
         void add_new_rel_symbols(unsigned idx, ptr_vector<rule_stratifier::item_set> const & decls,
             ptr_vector<func_decl> & buf, bool & was_added);
 
         void replace_applications(rule & r, rule_set & rules, ptr_vector<app> & apps);
 
-        rule * rename_bound_vars_in_rule(rule * r, unsigned & var_idx);
-        vector<rule_vector> rename_bound_vars(ptr_vector<rule_stratifier::item_set> const & heads, rule_set & rules);
+        rule_ref rename_bound_vars_in_rule(rule * r, unsigned & var_idx);
+        vector<rule_ref_vector> rename_bound_vars(ptr_vector<rule_stratifier::item_set> const & heads, rule_set & rules);
+
+        void add_rec_tail(vector< ptr_vector<app> > & recursive_calls, ptr_vector<app> & new_tail,
+            svector<bool> & new_tail_neg, unsigned & tail_idx);
+        void add_non_rec_tail(rule & r, ptr_vector<app> & new_tail, svector<bool> & new_tail_neg,
+            unsigned & tail_idx);
 
         app* product_application(ptr_vector<app> const & apps);
-        rule_ref product_rule(rule_vector const & rules);
+        rule_ref product_rule(rule_ref_vector const & rules);
 
-        void merge_rules(unsigned idx, rule_vector & buf,
-            vector<rule_vector> const & merged_rules, rule_set & all_rules);
+        void merge_rules(unsigned idx, rule_ref_vector & buf,
+            vector<rule_ref_vector> const & merged_rules, rule_set & all_rules);
         void merge_applications(rule & r, rule_set & rules);
 
     public:
